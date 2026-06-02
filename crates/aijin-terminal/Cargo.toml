@@ -1,0 +1,13 @@
+[package]
+name = "aijin-terminal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+aijin-core.workspace = true
+ratatui.workspace = true
+portable-pty.workspace = true
+vt100.workspace = true
+
+[lints]
+workspace = true

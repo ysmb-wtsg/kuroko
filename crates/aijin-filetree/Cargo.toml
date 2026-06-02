@@ -1,0 +1,12 @@
+[package]
+name = "aijin-filetree"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+aijin-core.workspace = true
+ratatui.workspace = true
+ignore = "0.4"
+
+[lints]
+workspace = true

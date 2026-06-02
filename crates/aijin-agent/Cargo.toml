@@ -1,0 +1,14 @@
+[package]
+name = "aijin-agent"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+aijin-core.workspace = true
+aijin-terminal.workspace = true
+ratatui.workspace = true
+portable-pty.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

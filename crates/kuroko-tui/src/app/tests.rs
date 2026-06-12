@@ -319,7 +319,11 @@ fn filetree_receives_keys_directly_in_normal_mode() {
 
     // j はフォーカス移動ではなくペイン内カーソル移動として処理される
     let actions = app.handle_normal_key(press_key(KeyCode::Char('j')));
-    assert!(actions.iter().all(|a| !matches!(a, Action::FocusDirection(_))));
+    assert!(
+        actions
+            .iter()
+            .all(|a| !matches!(a, Action::FocusDirection(_)))
+    );
     app.dispatch_actions(actions);
     assert_eq!(app.focused, filetree_id);
 }
@@ -336,7 +340,11 @@ fn ctrl_hjkl_moves_focus_from_filetree() {
         state: KeyEventState::NONE,
     };
     let actions = app.handle_normal_key(key);
-    assert!(actions.iter().any(|a| matches!(a, Action::FocusDirection(_))));
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, Action::FocusDirection(_)))
+    );
 }
 
 #[test]
@@ -397,7 +405,10 @@ fn notify_sets_status_message() {
     let mut app = App::new();
     app.dispatch_action(Action::Notify("test message".to_string()));
     assert!(app.overlay.status_message.is_some());
-    assert_eq!(app.overlay.status_message.as_ref().unwrap().text, "test message");
+    assert_eq!(
+        app.overlay.status_message.as_ref().unwrap().text,
+        "test message"
+    );
 }
 
 #[test]

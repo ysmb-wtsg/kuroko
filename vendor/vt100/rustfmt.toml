@@ -1,0 +1,2 @@
+# ベンダリングフォークはupstreamとの差分を最小に保つため整形しない
+disable_all_formatting = true

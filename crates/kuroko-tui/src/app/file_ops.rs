@@ -38,7 +38,10 @@ impl App {
                         self.overlay.set_status_message(format!("Created: {name}"));
                     }
                     Err(e) => {
-                        self.overlay.set_status_message_with_level(format!("Error: {e}"), MessageLevel::Error);
+                        self.overlay.set_status_message_with_level(
+                            format!("Error: {e}"),
+                            MessageLevel::Error,
+                        );
                     }
                 }
             }
@@ -47,7 +50,8 @@ impl App {
                 if new_name.is_empty() {
                     return;
                 }
-                let new_path = path.parent()
+                let new_path = path
+                    .parent()
                     .map(|p| p.join(new_name))
                     .unwrap_or_else(|| PathBuf::from(new_name));
                 match fs::rename(&path, &new_path) {
@@ -55,10 +59,14 @@ impl App {
                         if let Some(parent) = path.parent() {
                             self.refresh_file_tree(parent);
                         }
-                        self.overlay.set_status_message(format!("Renamed: {new_name}"));
+                        self.overlay
+                            .set_status_message(format!("Renamed: {new_name}"));
                     }
                     Err(e) => {
-                        self.overlay.set_status_message_with_level(format!("Error: {e}"), MessageLevel::Error);
+                        self.overlay.set_status_message_with_level(
+                            format!("Error: {e}"),
+                            MessageLevel::Error,
+                        );
                     }
                 }
             }
@@ -71,13 +79,18 @@ impl App {
                     }
                 }
                 if let Some(first) = paths.first()
-                    && let Some(parent) = first.parent() {
-                        self.refresh_file_tree(parent);
-                    }
+                    && let Some(parent) = first.parent()
+                {
+                    self.refresh_file_tree(parent);
+                }
                 if errors == 0 {
-                    self.overlay.set_status_message(format!("Deleted {count} item(s)"));
+                    self.overlay
+                        .set_status_message(format!("Deleted {count} item(s)"));
                 } else {
-                    self.overlay.set_status_message_with_level(format!("Deleted with {errors} error(s)"), MessageLevel::Error);
+                    self.overlay.set_status_message_with_level(
+                        format!("Deleted with {errors} error(s)"),
+                        MessageLevel::Error,
+                    );
                 }
             }
         }
@@ -87,9 +100,10 @@ impl App {
     pub(super) fn refresh_file_tree(&mut self, target: &std::path::Path) {
         if let Some(ft_id) = self.file_tree_id
             && let Some(pane) = self.panes.get_mut(&ft_id)
-                && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>() {
-                    ft.refresh(target);
-                }
+            && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>()
+        {
+            ft.refresh(target);
+        }
     }
 
     /// ファイルパスをアクティブなエージェントタブのPTYに送り、フォーカスを移す。
@@ -120,13 +134,16 @@ impl App {
     pub(super) fn copy_to_clipboard(&mut self, text: &str) {
         match arboard::Clipboard::new().and_then(|mut cb| cb.set_text(text.to_string())) {
             Ok(()) => self.overlay.set_status_message("Copied!".to_string()),
-            Err(e) => self.overlay.set_status_message_with_level(format!("Copy failed: {e}"), MessageLevel::Error),
+            Err(e) => self
+                .overlay
+                .set_status_message_with_level(format!("Copy failed: {e}"), MessageLevel::Error),
         }
     }
 
     /// FileTreeペインから選択中パスリストを取得するヘルパー
     pub(super) fn get_filetree_selected_paths(&self) -> Vec<PathBuf> {
-        self.panes.get(&self.focused)
+        self.panes
+            .get(&self.focused)
             .and_then(|p| p.as_any().downcast_ref::<FileTreePane>())
             .map(|ft| ft.selected_paths())
             .unwrap_or_default()

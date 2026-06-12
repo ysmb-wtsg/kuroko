@@ -6,8 +6,8 @@ use std::path::PathBuf;
 
 use ratatui::style::{Color, Style};
 
-use kuroko_core::{Action, FilePromptKind};
 use kuroko_core::theme;
+use kuroko_core::{Action, FilePromptKind};
 
 /// プレビュー表示の最大読み込み行数
 pub const PREVIEW_MAX_LINES: usize = 500;
@@ -90,7 +90,10 @@ impl HighlightedLine {
     /// プレーンテキスト（ハイライトなし）の行を生成する
     fn plain(text: &str) -> Self {
         Self {
-            spans: vec![(text.to_string(), Style::default().fg(theme::get().text_body))],
+            spans: vec![(
+                text.to_string(),
+                Style::default().fg(theme::get().text_body),
+            )],
         }
     }
 }
@@ -126,18 +129,21 @@ impl FilePreview {
                 let check_len = bytes.len().min(8192);
                 if bytes[..check_len].contains(&0) {
                     let line = HighlightedLine {
-                        spans: vec![("(binary file)".to_string(), Style::default().fg(theme::get().text_muted))],
+                        spans: vec![(
+                            "(binary file)".to_string(),
+                            Style::default().fg(theme::get().text_muted),
+                        )],
                     };
                     (vec![line], false)
                 } else {
                     let content = String::from_utf8_lossy(&bytes);
-                    let raw_lines: Vec<&str> = content
-                        .lines()
-                        .take(PREVIEW_MAX_LINES)
-                        .collect();
+                    let raw_lines: Vec<&str> = content.lines().take(PREVIEW_MAX_LINES).collect();
                     if raw_lines.is_empty() {
                         let line = HighlightedLine {
-                            spans: vec![("(empty file)".to_string(), Style::default().fg(theme::get().text_body))],
+                            spans: vec![(
+                                "(empty file)".to_string(),
+                                Style::default().fg(theme::get().text_body),
+                            )],
                         };
                         (vec![line], true)
                     } else {
@@ -148,7 +154,10 @@ impl FilePreview {
             }
             Err(e) => {
                 let line = HighlightedLine {
-                    spans: vec![(format!("Read error: {e}"), Style::default().fg(theme::get().accent_error))],
+                    spans: vec![(
+                        format!("Read error: {e}"),
+                        Style::default().fg(theme::get().accent_error),
+                    )],
                 };
                 (vec![line], false)
             }
@@ -169,9 +178,9 @@ impl FilePreview {
     /// @param raw_lines - ハイライト対象の行スライス
     /// @returns ハイライト済みの行リスト
     fn highlight_lines(path: &PathBuf, raw_lines: &[&str]) -> Vec<HighlightedLine> {
-        use syntect::parsing::SyntaxSet;
-        use syntect::highlighting::ThemeSet;
         use syntect::easy::HighlightLines;
+        use syntect::highlighting::ThemeSet;
+        use syntect::parsing::SyntaxSet;
 
         let ss = SyntaxSet::load_defaults_nonewlines();
         let ts = ThemeSet::load_defaults();
@@ -181,7 +190,10 @@ impl FilePreview {
             Some(t) => t,
             None => {
                 // テーマが見つからない場合はプレーンテキストにフォールバック
-                return raw_lines.iter().map(|l| HighlightedLine::plain(l)).collect();
+                return raw_lines
+                    .iter()
+                    .map(|l| HighlightedLine::plain(l))
+                    .collect();
             }
         };
 
@@ -206,14 +218,26 @@ impl FilePreview {
                                 let mut ratatui_style = Style::default().fg(fg);
                                 // 背景色はオーバーレイのSURFACE_OVERLAYを使うため設定しない
                                 // ただしボールド・イタリックは反映する
-                                if style.font_style.contains(syntect::highlighting::FontStyle::BOLD) {
-                                    ratatui_style = ratatui_style.add_modifier(ratatui::style::Modifier::BOLD);
+                                if style
+                                    .font_style
+                                    .contains(syntect::highlighting::FontStyle::BOLD)
+                                {
+                                    ratatui_style =
+                                        ratatui_style.add_modifier(ratatui::style::Modifier::BOLD);
                                 }
-                                if style.font_style.contains(syntect::highlighting::FontStyle::ITALIC) {
-                                    ratatui_style = ratatui_style.add_modifier(ratatui::style::Modifier::ITALIC);
+                                if style
+                                    .font_style
+                                    .contains(syntect::highlighting::FontStyle::ITALIC)
+                                {
+                                    ratatui_style = ratatui_style
+                                        .add_modifier(ratatui::style::Modifier::ITALIC);
                                 }
-                                if style.font_style.contains(syntect::highlighting::FontStyle::UNDERLINE) {
-                                    ratatui_style = ratatui_style.add_modifier(ratatui::style::Modifier::UNDERLINED);
+                                if style
+                                    .font_style
+                                    .contains(syntect::highlighting::FontStyle::UNDERLINE)
+                                {
+                                    ratatui_style = ratatui_style
+                                        .add_modifier(ratatui::style::Modifier::UNDERLINED);
                                 }
                                 (text.to_string(), ratatui_style)
                             })
@@ -256,9 +280,12 @@ impl FileInfo {
     pub fn load(path: PathBuf) -> Self {
         let mut lines = Vec::new();
 
-        lines.push(("Name".to_string(), path.file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| "-".to_string())));
+        lines.push((
+            "Name".to_string(),
+            path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "-".to_string()),
+        ));
         lines.push(("Path".to_string(), path.to_string_lossy().to_string()));
 
         match fs::metadata(&path) {
@@ -289,8 +316,10 @@ impl FileInfo {
                 // 更新日時
                 if let Ok(modified) = meta.modified() {
                     let datetime: chrono::DateTime<chrono::Local> = modified.into();
-                    lines.push(("Modified".to_string(),
-                        datetime.format("%Y-%m-%d %H:%M").to_string()));
+                    lines.push((
+                        "Modified".to_string(),
+                        datetime.format("%Y-%m-%d %H:%M").to_string(),
+                    ));
                 }
 
                 // パーミッション（Unix）
@@ -302,11 +331,13 @@ impl FileInfo {
                 }
 
                 // 行数（テキストファイルのみ、小さいファイル限定）
-                if meta.is_file() && size < 1_000_000
-                    && let Ok(content) = fs::read_to_string(&path) {
-                        let line_count = content.lines().count();
-                        lines.push(("Lines".to_string(), format!("{line_count}")));
-                    }
+                if meta.is_file()
+                    && size < 1_000_000
+                    && let Ok(content) = fs::read_to_string(&path)
+                {
+                    let line_count = content.lines().count();
+                    lines.push(("Lines".to_string(), format!("{line_count}")));
+                }
             }
             Err(e) => {
                 lines.push(("Error".to_string(), format!("{e}")));
@@ -430,7 +461,10 @@ impl CommandPalette {
     /// 入力テキストで候補をフィルタリングし、選択位置をリセットする
     pub fn update_filter(&mut self) {
         let query = self.input.to_lowercase();
-        self.filtered = self.commands.iter().enumerate()
+        self.filtered = self
+            .commands
+            .iter()
+            .enumerate()
             .filter(|(_, cmd)| {
                 if query.is_empty() {
                     return true;
@@ -450,7 +484,8 @@ impl CommandPalette {
 
     /// 選択中のコマンドのActionを返す
     pub fn selected_action(&self) -> Option<Action> {
-        self.filtered.get(self.selected)
+        self.filtered
+            .get(self.selected)
             .map(|&idx| self.commands[idx].action.clone())
     }
 

@@ -5,10 +5,10 @@ use std::any::Any;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use kuroko_core::theme;
 use ratatui::Frame;
 use ratatui::layout::{Margin, Rect};
 use ratatui::style::{Modifier, Style};
-use kuroko_core::theme;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
@@ -105,7 +105,8 @@ impl FileTreePane {
     ///
     /// @returns 選択中の全ファイル/ディレクトリのパス
     pub fn selected_paths(&self) -> Vec<PathBuf> {
-        self.selected_items.iter()
+        self.selected_items
+            .iter()
             .filter_map(|&idx| self.flat_cache.get(idx).map(|e| e.path.clone()))
             .collect()
     }
@@ -119,7 +120,9 @@ impl FileTreePane {
             if entry.is_dir {
                 entry.path.clone()
             } else {
-                entry.path.parent()
+                entry
+                    .path
+                    .parent()
                     .map(|p| p.to_path_buf())
                     .unwrap_or_else(|| entry.path.clone())
             }
@@ -174,16 +177,22 @@ impl Pane for FileTreePane {
     fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
         let t = theme::get();
         // ボーダーは描画せず、左右1セルの余白のみ確保する
-        let inner = area.inner(Margin { horizontal: 1, vertical: 0 });
+        let inner = area.inner(Margin {
+            horizontal: 1,
+            vertical: 0,
+        });
 
-        let items: Vec<ListItem> = self.flat_cache
+        let items: Vec<ListItem> = self
+            .flat_cache
             .iter()
             .enumerate()
             .map(|(idx, entry)| {
                 let indent = "  ".repeat(entry.depth);
                 let fi = file_icon(&entry.name, entry.is_dir, entry.expanded);
                 let name_style = if entry.is_dir {
-                    Style::default().fg(t.accent_primary).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(t.accent_primary)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(t.text_body)
                 };
@@ -197,7 +206,10 @@ impl Pane for FileTreePane {
                 if is_selected {
                     spans.push(Span::styled(marker, marker_style));
                 }
-                spans.push(Span::styled(format!("{} ", fi.icon), Style::default().fg(fi.color)));
+                spans.push(Span::styled(
+                    format!("{} ", fi.icon),
+                    Style::default().fg(fi.color),
+                ));
                 spans.push(Span::styled(&entry.name, name_style));
 
                 ListItem::new(Line::from(spans))
@@ -205,7 +217,9 @@ impl Pane for FileTreePane {
             .collect();
 
         let highlight_style = if focused {
-            Style::default().bg(t.surface_active).add_modifier(Modifier::BOLD)
+            Style::default()
+                .bg(t.surface_active)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().bg(t.surface_highlight)
         };
@@ -227,15 +241,18 @@ impl Pane for FileTreePane {
                 KeyCode::Char('k') | KeyCode::Up => self.move_up(),
                 KeyCode::Enter | KeyCode::Char('l') | KeyCode::Right => {
                     if let Some(entry) = self.flat_cache.get(self.selected)
-                        && entry.is_dir {
-                            self.toggle_selected();
-                        }
+                        && entry.is_dir
+                    {
+                        self.toggle_selected();
+                    }
                 }
                 KeyCode::Char('h') | KeyCode::Left => {
                     if let Some(entry) = self.flat_cache.get(self.selected)
-                        && entry.is_dir && entry.expanded {
-                            self.toggle_selected();
-                        }
+                        && entry.is_dir
+                        && entry.expanded
+                    {
+                        self.toggle_selected();
+                    }
                 }
                 KeyCode::Char('p') => {
                     if let Some(path) = self.selected_path() {
@@ -244,33 +261,36 @@ impl Pane for FileTreePane {
                 }
                 KeyCode::Char('a') => {
                     if let Some(parent_dir) = self.parent_dir_of_selected() {
-                        return vec![Action::OpenFilePrompt(
-                            FilePromptKind::Create { parent_dir },
-                        )];
+                        return vec![Action::OpenFilePrompt(FilePromptKind::Create {
+                            parent_dir,
+                        })];
                     }
                 }
                 KeyCode::Char('d') => {
                     if let Some(path) = self.selected_path() {
-                        return vec![Action::OpenFilePrompt(
-                            FilePromptKind::Delete { paths: vec![path] },
-                        )];
+                        return vec![Action::OpenFilePrompt(FilePromptKind::Delete {
+                            paths: vec![path],
+                        })];
                     }
                 }
                 KeyCode::Char('r') => {
                     if let Some(path) = self.selected_path() {
-                        let current_name = path.file_name()
+                        let current_name = path
+                            .file_name()
                             .map(|n| n.to_string_lossy().to_string())
                             .unwrap_or_default();
-                        return vec![Action::OpenFilePrompt(
-                            FilePromptKind::Rename { path, current_name },
-                        )];
+                        return vec![Action::OpenFilePrompt(FilePromptKind::Rename {
+                            path,
+                            current_name,
+                        })];
                     }
                 }
                 KeyCode::Char('o') => {
                     if let Some(entry) = self.flat_cache.get(self.selected)
-                        && !entry.is_dir {
-                            return vec![Action::SendFileToAgent(entry.path.clone())];
-                        }
+                        && !entry.is_dir
+                    {
+                        return vec![Action::SendFileToAgent(entry.path.clone())];
+                    }
                 }
                 KeyCode::Char('i') => {
                     if let Some(path) = self.selected_path() {
@@ -284,9 +304,7 @@ impl Pane for FileTreePane {
                 }
                 KeyCode::Char('Y') => {
                     if let Some(path) = self.selected_path() {
-                        return vec![Action::CopyToClipboard(
-                            path.to_string_lossy().to_string(),
-                        )];
+                        return vec![Action::CopyToClipboard(path.to_string_lossy().to_string())];
                     }
                 }
                 KeyCode::Char('v') => {

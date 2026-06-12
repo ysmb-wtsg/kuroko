@@ -39,7 +39,11 @@ pub enum BuiltinProvider {
     /// OpenAI Codex CLI
     Codex,
     /// カスタムコマンド
-    Custom { name: String, command: String, args: Vec<String> },
+    Custom {
+        name: String,
+        command: String,
+        args: Vec<String>,
+    },
 }
 
 impl AgentProvider for BuiltinProvider {
@@ -53,12 +57,8 @@ impl AgentProvider for BuiltinProvider {
 
     fn command(&self) -> CommandBuilder {
         match self {
-            BuiltinProvider::ClaudeCode => {
-                CommandBuilder::new("claude")
-            }
-            BuiltinProvider::Codex => {
-                CommandBuilder::new("codex")
-            }
+            BuiltinProvider::ClaudeCode => CommandBuilder::new("claude"),
+            BuiltinProvider::Codex => CommandBuilder::new("codex"),
             BuiltinProvider::Custom { command, args, .. } => {
                 let mut cmd = CommandBuilder::new(command);
                 for arg in args {

@@ -8,8 +8,8 @@ use ratatui::Frame;
 use ratatui::layout::Rect;
 use ratatui::style::Style;
 
-use kuroko_core::{Action, AppEvent, Pane, PaneId, PaneType};
 use kuroko_core::theme;
+use kuroko_core::{Action, AppEvent, Pane, PaneId, PaneType};
 
 use crate::pty_handle::{PtyHandle, PtyMessage};
 use crate::widget::TerminalWidget;
@@ -52,12 +52,7 @@ impl TerminalPane {
     /// @param rows - 初期行数
     /// @param pty_sender - PTY出力の送信先チャネル
     /// @returns TerminalPaneインスタンス
-    pub fn new(
-        id: PaneId,
-        cols: u16,
-        rows: u16,
-        pty_sender: mpsc::Sender<PtyMessage>,
-    ) -> Self {
+    pub fn new(id: PaneId, cols: u16, rows: u16, pty_sender: mpsc::Sender<PtyMessage>) -> Self {
         let (pty, spawn_error) = match PtyHandle::spawn(id, cols, rows, pty_sender) {
             Ok(handle) => (Some(handle), None),
             Err(e) => (None, Some(e.to_string())),
@@ -128,10 +123,11 @@ impl TerminalPane {
         pty_sender: mpsc::Sender<PtyMessage>,
         cmd: portable_pty::CommandBuilder,
     ) -> Self {
-        let (pty, spawn_error) = match PtyHandle::spawn_with_command(id, cols, rows, pty_sender, cmd) {
-            Ok(handle) => (Some(handle), None),
-            Err(e) => (None, Some(e.to_string())),
-        };
+        let (pty, spawn_error) =
+            match PtyHandle::spawn_with_command(id, cols, rows, pty_sender, cmd) {
+                Ok(handle) => (Some(handle), None),
+                Err(e) => (None, Some(e.to_string())),
+            };
         let parser = vt100::Parser::new(rows, cols, 10000);
 
         Self {
@@ -315,7 +311,9 @@ impl TerminalPane {
     /// 行単位選択: 開始行から終了行まで各行全体がハイライトされる。
     /// アンカーとカーソルの絶対行位置を比較して判定する。
     pub fn is_cell_selected(&self, row: u16, _col: u16) -> bool {
-        let Some((anchor_offset, anchor_row)) = self.selection_anchor else { return false };
+        let Some((anchor_offset, anchor_row)) = self.selection_anchor else {
+            return false;
+        };
         let anchor_logical = Self::logical_row(anchor_offset, anchor_row);
         let cursor_logical = Self::logical_row(self.scroll_offset, self.copy_cursor.0);
         let cell_logical = Self::logical_row(self.scroll_offset, row);
@@ -345,10 +343,8 @@ impl TerminalPane {
         // PTYスポーン失敗時はエラーメッセージを表示
         if let Some(ref err) = self.spawn_error {
             let msg = format!("Failed to start process: {err}");
-            let text = ratatui::text::Text::styled(
-                msg,
-                Style::default().fg(theme::get().accent_error),
-            );
+            let text =
+                ratatui::text::Text::styled(msg, Style::default().fg(theme::get().accent_error));
             frame.render_widget(text, area);
             return;
         }
@@ -373,7 +369,9 @@ impl TerminalPane {
             let anchor = self.selection_anchor;
             let scroll_offset = self.scroll_offset;
             widget = widget.with_copy_mode(cursor, move |row, _col| {
-                let Some((anchor_offset, anchor_row)) = anchor else { return false };
+                let Some((anchor_offset, anchor_row)) = anchor else {
+                    return false;
+                };
                 let anchor_logical = (anchor_row as isize) - (anchor_offset as isize);
                 let cursor_logical = (cursor.0 as isize) - (scroll_offset as isize);
                 let cell_logical = (row as isize) - (scroll_offset as isize);
@@ -397,7 +395,9 @@ impl TerminalPane {
             let t = theme::get();
             let line = ratatui::text::Line::from(ratatui::text::Span::styled(
                 scroll_info,
-                Style::default().fg(t.text_on_accent).bg(t.accent_warning)
+                Style::default()
+                    .fg(t.text_on_accent)
+                    .bg(t.accent_warning)
                     .add_modifier(ratatui::style::Modifier::BOLD),
             ));
             let indicator_area = Rect {

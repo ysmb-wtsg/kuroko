@@ -50,10 +50,7 @@ impl LayoutNode {
     ///
     /// @param area - 利用可能な描画領域全体
     /// @returns (ペインIDとRectのリスト, セパレータの方向とRectのリスト)
-    pub fn resolve_with_separators(
-        &self,
-        area: Rect,
-    ) -> (Vec<(PaneId, Rect)>, Vec<Separator>) {
+    pub fn resolve_with_separators(&self, area: Rect) -> (Vec<(PaneId, Rect)>, Vec<Separator>) {
         let mut panes = Vec::new();
         let mut separators: Vec<Separator> = Vec::new();
         self.resolve_inner(area, &mut panes, &mut separators);
@@ -93,12 +90,7 @@ impl LayoutNode {
     /// @param new_pane - 新しく追加するペインID
     /// @param direction - 分割方向
     /// @returns 対象ペインが見つかればtrue
-    pub fn split(
-        &mut self,
-        target: PaneId,
-        new_pane: PaneId,
-        direction: SplitDirection,
-    ) -> bool {
+    pub fn split(&mut self, target: PaneId, new_pane: PaneId, direction: SplitDirection) -> bool {
         match self {
             LayoutNode::Leaf(id) if *id == target => {
                 let old = LayoutNode::Leaf(*id);
@@ -349,7 +341,10 @@ mod tests {
         assert_eq!(result[1].1, Rect::new(50, 0, 50, 50));
         // セパレータ: x=49に1セル幅
         assert_eq!(separators.len(), 1);
-        assert_eq!(separators[0], (SplitDirection::Vertical, Rect::new(49, 0, 1, 50)));
+        assert_eq!(
+            separators[0],
+            (SplitDirection::Vertical, Rect::new(49, 0, 1, 50))
+        );
     }
 
     #[test]
@@ -368,7 +363,10 @@ mod tests {
         assert_eq!(result[1].1, Rect::new(0, 25, 100, 25));
         // セパレータ: y=24に1行
         assert_eq!(separators.len(), 1);
-        assert_eq!(separators[0], (SplitDirection::Horizontal, Rect::new(0, 24, 100, 1)));
+        assert_eq!(
+            separators[0],
+            (SplitDirection::Horizontal, Rect::new(0, 24, 100, 1))
+        );
     }
 
     #[test]
@@ -392,8 +390,14 @@ mod tests {
         assert_eq!(result[2].1, Rect::new(50, 0, 50, 50));
         // 垂直分割面 + 左側の水平分割面の2本
         assert_eq!(separators.len(), 2);
-        assert_eq!(separators[0], (SplitDirection::Vertical, Rect::new(49, 0, 1, 50)));
-        assert_eq!(separators[1], (SplitDirection::Horizontal, Rect::new(0, 24, 49, 1)));
+        assert_eq!(
+            separators[0],
+            (SplitDirection::Vertical, Rect::new(49, 0, 1, 50))
+        );
+        assert_eq!(
+            separators[1],
+            (SplitDirection::Horizontal, Rect::new(0, 24, 49, 1))
+        );
     }
 
     #[test]
@@ -542,10 +546,7 @@ mod tests {
             second: Box::new(LayoutNode::Leaf(PaneId(2))),
         };
         // 左右分割なので上下の隣接はない
-        assert_eq!(
-            node.find_neighbor(PaneId(1), Direction::Up, area()),
-            None
-        );
+        assert_eq!(node.find_neighbor(PaneId(1), Direction::Up, area()), None);
     }
 
     #[test]

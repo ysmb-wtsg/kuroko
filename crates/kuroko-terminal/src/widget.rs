@@ -25,7 +25,11 @@ impl<'a> TerminalWidget<'a> {
     ///
     /// @param screen - 描画元のvt100 Screen
     pub fn new(screen: &'a vt100::Screen) -> Self {
-        Self { screen, cursor: None, selection_check: None }
+        Self {
+            screen,
+            cursor: None,
+            selection_check: None,
+        }
     }
 
     /// コピーモードのカーソルと選択判定を設定する。
@@ -75,7 +79,8 @@ impl Widget for TerminalWidget<'_> {
                     let style = Style::default().fg(fg).bg(bg).add_modifier(modifier);
 
                     // 選択範囲のセルは固定の選択色で背景をハイライト
-                    let is_selected = self.selection_check
+                    let is_selected = self
+                        .selection_check
                         .as_ref()
                         .map(|check| check(row, col))
                         .unwrap_or(false);

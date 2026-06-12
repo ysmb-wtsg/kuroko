@@ -47,8 +47,12 @@ impl KeymapRegistry {
     pub fn set(&mut self, mode: &str, key: String, callback: RegistryKey) {
         let entry = KeymapEntry { callback };
         match mode {
-            "n" => { self.normal.insert(key, entry); }
-            "i" => { self.insert.insert(key, entry); }
+            "n" => {
+                self.normal.insert(key, entry);
+            }
+            "i" => {
+                self.insert.insert(key, entry);
+            }
             _ => {}
         }
     }
@@ -104,5 +108,4 @@ mod tests {
         assert_eq!(normalize_key_string("q", " "), "q");
         assert_eq!(normalize_key_string("<C-a>", " "), "<C-a>");
     }
-
 }

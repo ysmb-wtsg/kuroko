@@ -110,7 +110,9 @@ static THEME: RwLock<Theme> = RwLock::new(Theme::DEFAULT);
 ///
 /// @returns 現在適用中のテーマのコピー
 pub fn get() -> Theme {
-    *THEME.read().unwrap_or_else(|poisoned| poisoned.into_inner())
+    *THEME
+        .read()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// テーマを差し替える。
@@ -118,7 +120,9 @@ pub fn get() -> Theme {
 ///
 /// @param theme - 適用するテーマ
 pub fn set(theme: Theme) {
-    *THEME.write().unwrap_or_else(|poisoned| poisoned.into_inner()) = theme;
+    *THEME
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) = theme;
 }
 
 #[cfg(test)]

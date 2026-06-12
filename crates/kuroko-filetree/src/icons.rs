@@ -20,9 +20,15 @@ pub struct FileIcon {
 pub fn file_icon(name: &str, is_dir: bool, expanded: bool) -> FileIcon {
     if is_dir {
         return if expanded {
-            FileIcon { icon: "\u{f07c}", color: Color::Rgb(229, 165, 68) }
+            FileIcon {
+                icon: "\u{f07c}",
+                color: Color::Rgb(229, 165, 68),
+            }
         } else {
-            FileIcon { icon: "\u{f07b}", color: Color::Rgb(229, 165, 68) }
+            FileIcon {
+                icon: "\u{f07b}",
+                color: Color::Rgb(229, 165, 68),
+            }
         };
     }
     icon_for_file(name)
@@ -36,22 +42,54 @@ fn icon_for_file(name: &str) -> FileIcon {
     // 特定ファイル名の完全一致（大文字小文字を無視）
     let lower = name.to_lowercase();
     match lower.as_str() {
-        "cargo.toml" | "cargo.lock" =>
-            return FileIcon { icon: "\u{e7a8}", color: Color::Rgb(222, 120, 53) },
-        "dockerfile" | "containerfile" =>
-            return FileIcon { icon: "\u{e7b0}", color: Color::Rgb(56, 143, 205) },
-        "docker-compose.yml" | "docker-compose.yaml" | "compose.yml" | "compose.yaml" =>
-            return FileIcon { icon: "\u{e7b0}", color: Color::Rgb(56, 143, 205) },
-        ".gitignore" | ".gitmodules" | ".gitattributes" | ".gitkeep" =>
-            return FileIcon { icon: "\u{e702}", color: Color::Rgb(222, 79, 54) },
-        "license" | "license.md" | "license.txt" | "licence" | "licence.md" =>
-            return FileIcon { icon: "\u{f0219}", color: Color::Rgb(185, 155, 55) },
-        "makefile" | "justfile" =>
-            return FileIcon { icon: "\u{e615}", color: Color::Rgb(111, 155, 98) },
-        "readme.md" | "readme" | "readme.txt" =>
-            return FileIcon { icon: "\u{e73e}", color: Color::Rgb(66, 165, 245) },
-        ".editorconfig" | ".prettierrc" | ".eslintrc" =>
-            return FileIcon { icon: "\u{e615}", color: Color::Rgb(155, 135, 105) },
+        "cargo.toml" | "cargo.lock" => {
+            return FileIcon {
+                icon: "\u{e7a8}",
+                color: Color::Rgb(222, 120, 53),
+            };
+        }
+        "dockerfile" | "containerfile" => {
+            return FileIcon {
+                icon: "\u{e7b0}",
+                color: Color::Rgb(56, 143, 205),
+            };
+        }
+        "docker-compose.yml" | "docker-compose.yaml" | "compose.yml" | "compose.yaml" => {
+            return FileIcon {
+                icon: "\u{e7b0}",
+                color: Color::Rgb(56, 143, 205),
+            };
+        }
+        ".gitignore" | ".gitmodules" | ".gitattributes" | ".gitkeep" => {
+            return FileIcon {
+                icon: "\u{e702}",
+                color: Color::Rgb(222, 79, 54),
+            };
+        }
+        "license" | "license.md" | "license.txt" | "licence" | "licence.md" => {
+            return FileIcon {
+                icon: "\u{f0219}",
+                color: Color::Rgb(185, 155, 55),
+            };
+        }
+        "makefile" | "justfile" => {
+            return FileIcon {
+                icon: "\u{e615}",
+                color: Color::Rgb(111, 155, 98),
+            };
+        }
+        "readme.md" | "readme" | "readme.txt" => {
+            return FileIcon {
+                icon: "\u{e73e}",
+                color: Color::Rgb(66, 165, 245),
+            };
+        }
+        ".editorconfig" | ".prettierrc" | ".eslintrc" => {
+            return FileIcon {
+                icon: "\u{e615}",
+                color: Color::Rgb(155, 135, 105),
+            };
+        }
         _ => {}
     }
 
@@ -59,93 +97,226 @@ fn icon_for_file(name: &str) -> FileIcon {
     let ext = lower.rsplit('.').next().unwrap_or("");
     match ext {
         // Rust
-        "rs" => FileIcon { icon: "\u{e7a8}", color: Color::Rgb(222, 120, 53) },
+        "rs" => FileIcon {
+            icon: "\u{e7a8}",
+            color: Color::Rgb(222, 120, 53),
+        },
 
         // JavaScript / TypeScript
-        "js" | "mjs" | "cjs" =>
-            FileIcon { icon: "\u{e74e}", color: Color::Rgb(229, 214, 80) },
-        "ts" | "mts" | "cts" =>
-            FileIcon { icon: "\u{e628}", color: Color::Rgb(49, 120, 198) },
-        "jsx" => FileIcon { icon: "\u{e7ba}", color: Color::Rgb(97, 218, 251) },
-        "tsx" => FileIcon { icon: "\u{e7ba}", color: Color::Rgb(49, 120, 198) },
+        "js" | "mjs" | "cjs" => FileIcon {
+            icon: "\u{e74e}",
+            color: Color::Rgb(229, 214, 80),
+        },
+        "ts" | "mts" | "cts" => FileIcon {
+            icon: "\u{e628}",
+            color: Color::Rgb(49, 120, 198),
+        },
+        "jsx" => FileIcon {
+            icon: "\u{e7ba}",
+            color: Color::Rgb(97, 218, 251),
+        },
+        "tsx" => FileIcon {
+            icon: "\u{e7ba}",
+            color: Color::Rgb(49, 120, 198),
+        },
 
         // Web
-        "html" | "htm" => FileIcon { icon: "\u{e736}", color: Color::Rgb(228, 79, 38) },
-        "css" => FileIcon { icon: "\u{e749}", color: Color::Rgb(86, 156, 214) },
-        "scss" | "sass" => FileIcon { icon: "\u{e749}", color: Color::Rgb(205, 103, 153) },
-        "vue" => FileIcon { icon: "\u{e6a0}", color: Color::Rgb(65, 184, 131) },
-        "svelte" => FileIcon { icon: "\u{e697}", color: Color::Rgb(255, 62, 0) },
+        "html" | "htm" => FileIcon {
+            icon: "\u{e736}",
+            color: Color::Rgb(228, 79, 38),
+        },
+        "css" => FileIcon {
+            icon: "\u{e749}",
+            color: Color::Rgb(86, 156, 214),
+        },
+        "scss" | "sass" => FileIcon {
+            icon: "\u{e749}",
+            color: Color::Rgb(205, 103, 153),
+        },
+        "vue" => FileIcon {
+            icon: "\u{e6a0}",
+            color: Color::Rgb(65, 184, 131),
+        },
+        "svelte" => FileIcon {
+            icon: "\u{e697}",
+            color: Color::Rgb(255, 62, 0),
+        },
 
         // スクリプト言語
-        "py" => FileIcon { icon: "\u{e73c}", color: Color::Rgb(55, 118, 171) },
-        "rb" => FileIcon { icon: "\u{e791}", color: Color::Rgb(204, 52, 45) },
-        "lua" => FileIcon { icon: "\u{e620}", color: Color::Rgb(66, 135, 245) },
-        "php" => FileIcon { icon: "\u{e73d}", color: Color::Rgb(119, 123, 180) },
-        "pl" | "pm" => FileIcon { icon: "\u{e769}", color: Color::Rgb(57, 69, 124) },
+        "py" => FileIcon {
+            icon: "\u{e73c}",
+            color: Color::Rgb(55, 118, 171),
+        },
+        "rb" => FileIcon {
+            icon: "\u{e791}",
+            color: Color::Rgb(204, 52, 45),
+        },
+        "lua" => FileIcon {
+            icon: "\u{e620}",
+            color: Color::Rgb(66, 135, 245),
+        },
+        "php" => FileIcon {
+            icon: "\u{e73d}",
+            color: Color::Rgb(119, 123, 180),
+        },
+        "pl" | "pm" => FileIcon {
+            icon: "\u{e769}",
+            color: Color::Rgb(57, 69, 124),
+        },
 
         // コンパイル言語
-        "go" => FileIcon { icon: "\u{e626}", color: Color::Rgb(0, 173, 216) },
-        "java" => FileIcon { icon: "\u{e738}", color: Color::Rgb(204, 62, 68) },
-        "kt" | "kts" => FileIcon { icon: "\u{e634}", color: Color::Rgb(129, 104, 198) },
-        "swift" => FileIcon { icon: "\u{e755}", color: Color::Rgb(240, 81, 56) },
-        "c" => FileIcon { icon: "\u{e61e}", color: Color::Rgb(85, 141, 205) },
-        "cpp" | "cc" | "cxx" =>
-            FileIcon { icon: "\u{e61d}", color: Color::Rgb(85, 141, 205) },
-        "h" | "hpp" | "hxx" =>
-            FileIcon { icon: "\u{e61e}", color: Color::Rgb(121, 94, 163) },
-        "cs" => FileIcon { icon: "\u{f031b}", color: Color::Rgb(86, 156, 214) },
-        "zig" => FileIcon { icon: "\u{e6a9}", color: Color::Rgb(236, 145, 27) },
+        "go" => FileIcon {
+            icon: "\u{e626}",
+            color: Color::Rgb(0, 173, 216),
+        },
+        "java" => FileIcon {
+            icon: "\u{e738}",
+            color: Color::Rgb(204, 62, 68),
+        },
+        "kt" | "kts" => FileIcon {
+            icon: "\u{e634}",
+            color: Color::Rgb(129, 104, 198),
+        },
+        "swift" => FileIcon {
+            icon: "\u{e755}",
+            color: Color::Rgb(240, 81, 56),
+        },
+        "c" => FileIcon {
+            icon: "\u{e61e}",
+            color: Color::Rgb(85, 141, 205),
+        },
+        "cpp" | "cc" | "cxx" => FileIcon {
+            icon: "\u{e61d}",
+            color: Color::Rgb(85, 141, 205),
+        },
+        "h" | "hpp" | "hxx" => FileIcon {
+            icon: "\u{e61e}",
+            color: Color::Rgb(121, 94, 163),
+        },
+        "cs" => FileIcon {
+            icon: "\u{f031b}",
+            color: Color::Rgb(86, 156, 214),
+        },
+        "zig" => FileIcon {
+            icon: "\u{e6a9}",
+            color: Color::Rgb(236, 145, 27),
+        },
 
         // データ・設定
-        "json" | "jsonc" => FileIcon { icon: "\u{e60b}", color: Color::Rgb(229, 214, 80) },
-        "toml" => FileIcon { icon: "\u{e6b2}", color: Color::Rgb(155, 135, 105) },
-        "yaml" | "yml" => FileIcon { icon: "\u{e6a8}", color: Color::Rgb(155, 89, 182) },
-        "xml" => FileIcon { icon: "\u{e619}", color: Color::Rgb(228, 79, 38) },
-        "csv" => FileIcon { icon: "\u{f1c3}", color: Color::Rgb(86, 156, 76) },
-        "sql" => FileIcon { icon: "\u{e706}", color: Color::Rgb(218, 165, 32) },
-        "graphql" | "gql" =>
-            FileIcon { icon: "\u{e662}", color: Color::Rgb(229, 53, 171) },
-        "proto" => FileIcon { icon: "\u{e6b1}", color: Color::Rgb(130, 130, 130) },
+        "json" | "jsonc" => FileIcon {
+            icon: "\u{e60b}",
+            color: Color::Rgb(229, 214, 80),
+        },
+        "toml" => FileIcon {
+            icon: "\u{e6b2}",
+            color: Color::Rgb(155, 135, 105),
+        },
+        "yaml" | "yml" => FileIcon {
+            icon: "\u{e6a8}",
+            color: Color::Rgb(155, 89, 182),
+        },
+        "xml" => FileIcon {
+            icon: "\u{e619}",
+            color: Color::Rgb(228, 79, 38),
+        },
+        "csv" => FileIcon {
+            icon: "\u{f1c3}",
+            color: Color::Rgb(86, 156, 76),
+        },
+        "sql" => FileIcon {
+            icon: "\u{e706}",
+            color: Color::Rgb(218, 165, 32),
+        },
+        "graphql" | "gql" => FileIcon {
+            icon: "\u{e662}",
+            color: Color::Rgb(229, 53, 171),
+        },
+        "proto" => FileIcon {
+            icon: "\u{e6b1}",
+            color: Color::Rgb(130, 130, 130),
+        },
 
         // シェル
-        "sh" | "bash" | "zsh" | "fish" =>
-            FileIcon { icon: "\u{e795}", color: Color::Rgb(111, 155, 98) },
+        "sh" | "bash" | "zsh" | "fish" => FileIcon {
+            icon: "\u{e795}",
+            color: Color::Rgb(111, 155, 98),
+        },
 
         // ドキュメント
-        "md" | "mdx" => FileIcon { icon: "\u{e73e}", color: Color::Rgb(66, 165, 245) },
-        "txt" => FileIcon { icon: "\u{f15c}", color: Color::Rgb(175, 175, 175) },
-        "pdf" => FileIcon { icon: "\u{f1c1}", color: Color::Rgb(210, 70, 50) },
-        "doc" | "docx" => FileIcon { icon: "\u{f1c2}", color: Color::Rgb(52, 101, 175) },
+        "md" | "mdx" => FileIcon {
+            icon: "\u{e73e}",
+            color: Color::Rgb(66, 165, 245),
+        },
+        "txt" => FileIcon {
+            icon: "\u{f15c}",
+            color: Color::Rgb(175, 175, 175),
+        },
+        "pdf" => FileIcon {
+            icon: "\u{f1c1}",
+            color: Color::Rgb(210, 70, 50),
+        },
+        "doc" | "docx" => FileIcon {
+            icon: "\u{f1c2}",
+            color: Color::Rgb(52, 101, 175),
+        },
 
         // 画像
-        "png" | "jpg" | "jpeg" | "gif" | "webp" | "ico" | "bmp" | "tiff" =>
-            FileIcon { icon: "\u{f1c5}", color: Color::Rgb(165, 121, 214) },
-        "svg" => FileIcon { icon: "\u{f1c5}", color: Color::Rgb(255, 181, 62) },
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "ico" | "bmp" | "tiff" => FileIcon {
+            icon: "\u{f1c5}",
+            color: Color::Rgb(165, 121, 214),
+        },
+        "svg" => FileIcon {
+            icon: "\u{f1c5}",
+            color: Color::Rgb(255, 181, 62),
+        },
 
         // フォント
-        "ttf" | "otf" | "woff" | "woff2" =>
-            FileIcon { icon: "\u{f031}", color: Color::Rgb(175, 175, 175) },
+        "ttf" | "otf" | "woff" | "woff2" => FileIcon {
+            icon: "\u{f031}",
+            color: Color::Rgb(175, 175, 175),
+        },
 
         // アーカイブ
-        "zip" | "tar" | "gz" | "bz2" | "xz" | "7z" | "rar" =>
-            FileIcon { icon: "\u{f1c6}", color: Color::Rgb(175, 135, 95) },
+        "zip" | "tar" | "gz" | "bz2" | "xz" | "7z" | "rar" => FileIcon {
+            icon: "\u{f1c6}",
+            color: Color::Rgb(175, 135, 95),
+        },
 
         // バイナリ・実行可能
-        "wasm" => FileIcon { icon: "\u{e6a1}", color: Color::Rgb(101, 79, 240) },
-        "exe" | "dll" | "so" | "dylib" =>
-            FileIcon { icon: "\u{f013}", color: Color::Rgb(130, 130, 130) },
+        "wasm" => FileIcon {
+            icon: "\u{e6a1}",
+            color: Color::Rgb(101, 79, 240),
+        },
+        "exe" | "dll" | "so" | "dylib" => FileIcon {
+            icon: "\u{f013}",
+            color: Color::Rgb(130, 130, 130),
+        },
 
         // ロック・環境
-        "lock" => FileIcon { icon: "\u{f023}", color: Color::Rgb(130, 130, 130) },
-        "env" => FileIcon { icon: "\u{f462}", color: Color::Rgb(250, 200, 50) },
-        "log" => FileIcon { icon: "\u{f18d}", color: Color::Rgb(130, 130, 130) },
+        "lock" => FileIcon {
+            icon: "\u{f023}",
+            color: Color::Rgb(130, 130, 130),
+        },
+        "env" => FileIcon {
+            icon: "\u{f462}",
+            color: Color::Rgb(250, 200, 50),
+        },
+        "log" => FileIcon {
+            icon: "\u{f18d}",
+            color: Color::Rgb(130, 130, 130),
+        },
 
         // Git関連
-        "diff" | "patch" =>
-            FileIcon { icon: "\u{e702}", color: Color::Rgb(222, 79, 54) },
+        "diff" | "patch" => FileIcon {
+            icon: "\u{e702}",
+            color: Color::Rgb(222, 79, 54),
+        },
 
         // デフォルト
-        _ => FileIcon { icon: "\u{f15b}", color: Color::Rgb(155, 155, 155) },
+        _ => FileIcon {
+            icon: "\u{f15b}",
+            color: Color::Rgb(155, 155, 155),
+        },
     }
 }
 

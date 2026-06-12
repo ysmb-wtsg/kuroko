@@ -16,22 +16,21 @@ use std::time::Duration;
 
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
-    self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
-    EnableMouseCapture, DisableMouseCapture,
-    EnableBracketedPaste, DisableBracketedPaste,
+    self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
 };
 use ratatui::crossterm::execute;
 use ratatui::layout::Rect;
 
-use kuroko_core::{Action, Direction, FilePromptKind, LayoutNode, Mode, Pane, PaneId, SideContent};
-use kuroko_core::layout::SplitDirection;
 use kuroko_agent::{AgentPane, BuiltinProvider};
+use kuroko_core::layout::SplitDirection;
+use kuroko_core::{Action, Direction, FilePromptKind, LayoutNode, Mode, Pane, PaneId, SideContent};
 use kuroko_filetree::FileTreePane;
 use kuroko_lua::{LuaRuntime, SharedKeymapRegistry};
 use kuroko_terminal::TerminalPane;
 use kuroko_terminal::pty_handle::PtyMessage;
 
-use overlay::{OverlayState, FilePreview, FilePrompt, FileInfo, MessageLevel};
+use overlay::{FileInfo, FilePreview, FilePrompt, MessageLevel, OverlayState};
 use tab_manager::TabManager;
 
 /// アプリケーションのメイン構造体。
@@ -138,12 +137,14 @@ impl App {
             _ => BuiltinProvider::ClaudeCode,
         };
         let main_pane: Box<dyn Pane> = match main_pane_setting.as_str() {
-            "terminal" => {
-                Box::new(TerminalPane::new(main_id, 80, 24, pty_tx.clone()))
-            }
-            _ => {
-                Box::new(AgentPane::new(main_id, &tab_provider, 80, 24, pty_tx.clone()))
-            }
+            "terminal" => Box::new(TerminalPane::new(main_id, 80, 24, pty_tx.clone())),
+            _ => Box::new(AgentPane::new(
+                main_id,
+                &tab_provider,
+                80,
+                24,
+                pty_tx.clone(),
+            )),
         };
 
         let mut panes: HashMap<PaneId, Box<dyn Pane>> = HashMap::new();
@@ -177,7 +178,8 @@ impl App {
 
         // Lua初期化エラーがあれば通知する
         if let Some(err) = lua_init_error {
-            app.overlay.set_status_message_with_level(err, MessageLevel::Error);
+            app.overlay
+                .set_status_message_with_level(err, MessageLevel::Error);
         }
 
         // セッションに保存されていたパネル状態を復元する
@@ -306,12 +308,18 @@ impl App {
         }
 
         // コピーモード中はモード別ディスパッチより先に処理する
-        let in_copy_mode = self.panes.get(&self.focused)
+        let in_copy_mode = self
+            .panes
+            .get(&self.focused)
             .and_then(|p| {
-                p.as_any().downcast_ref::<TerminalPane>()
+                p.as_any()
+                    .downcast_ref::<TerminalPane>()
                     .map(|tp| tp.is_copy_mode())
-                    .or_else(|| p.as_any().downcast_ref::<AgentPane>()
-                        .map(|ap| ap.is_copy_mode()))
+                    .or_else(|| {
+                        p.as_any()
+                            .downcast_ref::<AgentPane>()
+                            .map(|ap| ap.is_copy_mode())
+                    })
             })
             .unwrap_or(false);
         if in_copy_mode {
@@ -384,7 +392,10 @@ impl App {
                 }
             }
             Action::FocusDirection(direction) => {
-                if let Some(neighbor) = self.layout.find_neighbor(self.focused, direction, self.last_area) {
+                if let Some(neighbor) =
+                    self.layout
+                        .find_neighbor(self.focused, direction, self.last_area)
+                {
                     self.focused = neighbor;
                 }
             }
@@ -448,7 +459,12 @@ impl App {
             }
             Action::ToggleFilePreview(path) => {
                 // 既にプレビュー表示中なら閉じる
-                if self.overlay.file_preview.as_ref().is_some_and(|p| p.path == path) {
+                if self
+                    .overlay
+                    .file_preview
+                    .as_ref()
+                    .is_some_and(|p| p.path == path)
+                {
                     self.overlay.file_preview = None;
                 } else {
                     self.overlay.file_preview = Some(FilePreview::load(path));
@@ -504,7 +520,8 @@ impl App {
     /// メインタブのアクティブペインIDを取得する。
     /// main_tabsは常に1つ以上のタブを持つ不変条件があるため、失敗時はパニックする。
     fn main_active_id(&self) -> PaneId {
-        self.main_tabs.active_id()
+        self.main_tabs
+            .active_id()
             .expect("invariant: main_tabs always has at least one tab")
     }
 
@@ -579,7 +596,10 @@ impl App {
                 if self.git_panel_id.is_none() {
                     if which::which(&self.git_tool).is_err() {
                         self.overlay.set_status_message_with_level(
-                            format!("{} not found. Install it or set krk.opt.git_tool", self.git_tool),
+                            format!(
+                                "{} not found. Install it or set krk.opt.git_tool",
+                                self.git_tool
+                            ),
                             MessageLevel::Warn,
                         );
                         return false;
@@ -670,14 +690,22 @@ impl App {
         match direction {
             Direction::Left | Direction::Right => {
                 if self.side_content.is_some() {
-                    let adjust = if direction == Direction::Left { delta } else { -delta };
+                    let adjust = if direction == Direction::Left {
+                        delta
+                    } else {
+                        -delta
+                    };
                     self.side_ratio = (self.side_ratio + adjust).clamp(0.15, 0.6);
                     self.rebuild_layout();
                 }
             }
             Direction::Up | Direction::Down => {
                 if self.bottom_visible && self.bottom_terminal_tabs.contains(&self.focused) {
-                    let adjust = if direction == Direction::Down { delta } else { -delta };
+                    let adjust = if direction == Direction::Down {
+                        delta
+                    } else {
+                        -delta
+                    };
                     self.bottom_ratio = (self.bottom_ratio + adjust).clamp(0.3, 0.9);
                     self.rebuild_layout();
                 }
@@ -755,7 +783,9 @@ impl App {
             self.bottom_visible = false;
             self.focused = self.main_active_id();
         } else {
-            self.focused = self.bottom_terminal_tabs.active_id()
+            self.focused = self
+                .bottom_terminal_tabs
+                .active_id()
                 .expect("invariant: bottom_terminal_tabs is non-empty after failed is_empty check");
         }
         self.rebuild_layout();
@@ -781,7 +811,9 @@ impl App {
 
     /// インデックス指定でターミナルタブを選択する（0始まり）
     fn select_terminal_tab(&mut self, index: usize) {
-        if index >= self.bottom_terminal_tabs.len() || index == self.bottom_terminal_tabs.active_index() {
+        if index >= self.bottom_terminal_tabs.len()
+            || index == self.bottom_terminal_tabs.active_index()
+        {
             return;
         }
         self.bottom_terminal_tabs.select(index);
@@ -790,7 +822,6 @@ impl App {
             self.rebuild_layout();
         }
     }
-
 }
 
 /// XDG設定ディレクトリのパスを返す（~/.config/krk/）
@@ -812,7 +843,9 @@ fn key_to_bytes(key: &KeyEvent) -> Option<Vec<u8>> {
     match key.code {
         KeyCode::Char(c) => {
             if ctrl {
-                let byte = (c.to_ascii_lowercase() as u8).wrapping_sub(b'a').wrapping_add(1);
+                let byte = (c.to_ascii_lowercase() as u8)
+                    .wrapping_sub(b'a')
+                    .wrapping_add(1);
                 Some(vec![byte])
             } else {
                 let mut buf = [0u8; 4];

@@ -1,5 +1,8 @@
 [workspace]
 resolver = "2"
+# vendor/vt100はベンダリングフォークのため、fmt/clippy/testの対象から外す
+# （upstreamとの差分を最小に保つ。パス依存としてのビルドは除外後も可能）
+exclude = ["vendor/vt100"]
 members = [
     "crates/kuroko-core",
     "crates/kuroko-terminal",
@@ -41,6 +44,7 @@ warnings = "deny"
 name = "kuroko"
 version.workspace = true
 edition.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "krk"

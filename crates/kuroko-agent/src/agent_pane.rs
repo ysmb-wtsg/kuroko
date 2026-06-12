@@ -130,19 +130,33 @@ impl AgentPane {
     }
 
     /// カーソルを上に移動する
-    pub fn move_cursor_up(&mut self) { self.inner.move_cursor_up(); }
+    pub fn move_cursor_up(&mut self) {
+        self.inner.move_cursor_up();
+    }
     /// カーソルを下に移動する
-    pub fn move_cursor_down(&mut self) { self.inner.move_cursor_down(); }
+    pub fn move_cursor_down(&mut self) {
+        self.inner.move_cursor_down();
+    }
     /// カーソルを左に移動する
-    pub fn move_cursor_left(&mut self) { self.inner.move_cursor_left(); }
+    pub fn move_cursor_left(&mut self) {
+        self.inner.move_cursor_left();
+    }
     /// カーソルを右に移動する
-    pub fn move_cursor_right(&mut self) { self.inner.move_cursor_right(); }
+    pub fn move_cursor_right(&mut self) {
+        self.inner.move_cursor_right();
+    }
     /// テキスト選択の開始/解除をトグルする
-    pub fn toggle_selection(&mut self) { self.inner.toggle_selection(); }
+    pub fn toggle_selection(&mut self) {
+        self.inner.toggle_selection();
+    }
     /// 選択範囲のテキストを返す（選択なしなら画面全体）
-    pub fn selected_text(&mut self) -> String { self.inner.selected_text() }
+    pub fn selected_text(&mut self) -> String {
+        self.inner.selected_text()
+    }
     /// 選択中かどうかを返す
-    pub fn has_selection(&self) -> bool { self.inner.has_selection() }
+    pub fn has_selection(&self) -> bool {
+        self.inner.has_selection()
+    }
 
     /// 現在のエージェントステータスを返す
     pub fn status(&self) -> AgentStatus {

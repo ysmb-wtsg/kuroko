@@ -3,10 +3,10 @@
 
 use std::sync::mpsc;
 
-use mlua::{Lua, Table, Function};
+use mlua::{Function, Lua, Table};
 
-use kuroko_core::{Action, KurokoError, Direction};
 use crate::keymap::{SharedKeymapRegistry, new_shared_registry, normalize_key_string};
+use kuroko_core::{Action, Direction, KurokoError};
 
 /// Luaランタイムの管理構造体。
 /// Lua VMとActionの送信チャネルとキーマップレジストリを保持する。
@@ -27,7 +27,11 @@ impl LuaRuntime {
     pub fn new(action_tx: mpsc::Sender<Action>) -> Result<Self, KurokoError> {
         let lua = Lua::new();
         let keymap_registry = new_shared_registry();
-        let runtime = Self { lua, action_tx, keymap_registry };
+        let runtime = Self {
+            lua,
+            action_tx,
+            keymap_registry,
+        };
         runtime
             .register_api()
             .map_err(|e| KurokoError::Lua(e.to_string()))?;
@@ -73,26 +77,28 @@ impl LuaRuntime {
 
         // krk.keymap.set(mode, key, callback)
         // Luaコールバックをキーマップレジストリに登録する
-        let set_fn = self.lua.create_function(move |lua, (mode, key, callback): (String, String, Function)| {
-            // リーダーキーの展開: krk.opt.leader を取得
-            let leader = lua.globals()
-                .get::<mlua::Table>("krk")
-                .and_then(|a| a.get::<mlua::Table>("opt"))
-                .and_then(|o| o.get::<String>("leader"))
-                .unwrap_or_else(|_| " ".to_string());
-            let normalized_key = normalize_key_string(&key, &leader);
+        let set_fn = self.lua.create_function(
+            move |lua, (mode, key, callback): (String, String, Function)| {
+                // リーダーキーの展開: krk.opt.leader を取得
+                let leader = lua
+                    .globals()
+                    .get::<mlua::Table>("krk")
+                    .and_then(|a| a.get::<mlua::Table>("opt"))
+                    .and_then(|o| o.get::<String>("leader"))
+                    .unwrap_or_else(|_| " ".to_string());
+                let normalized_key = normalize_key_string(&key, &leader);
 
-            // コールバックをLuaレジストリに保存
-            let registry_key = lua.create_registry_value(callback)
-                .map_err(|e| mlua::Error::RuntimeError(
-                    format!("Failed to register keymap callback: {e}"),
-                ))?;
+                // コールバックをLuaレジストリに保存
+                let registry_key = lua.create_registry_value(callback).map_err(|e| {
+                    mlua::Error::RuntimeError(format!("Failed to register keymap callback: {e}"))
+                })?;
 
-            // キーマップレジストリに登録
-            let mut reg = registry.lock().unwrap();
-            reg.set(&mode, normalized_key, registry_key);
-            Ok(())
-        })?;
+                // キーマップレジストリに登録
+                let mut reg = registry.lock().unwrap();
+                reg.set(&mode, normalized_key, registry_key);
+                Ok(())
+            },
+        )?;
         keymap.set("set", set_fn)?;
 
         Ok(keymap)
@@ -129,7 +135,9 @@ impl LuaRuntime {
                 "up" => Action::FocusDirection(Direction::Up),
                 "down" => Action::FocusDirection(Direction::Down),
                 _ => {
-                    let _ = tx2.send(Action::Notify(format!("Unknown focus direction: {direction}")));
+                    let _ = tx2.send(Action::Notify(format!(
+                        "Unknown focus direction: {direction}"
+                    )));
                     return Ok(());
                 }
             };
@@ -177,10 +185,12 @@ impl LuaRuntime {
     /// @param registry_key - 実行するLuaコールバックのレジストリキー
     /// @returns 実行成功ならOk、エラーならErr
     pub fn exec_callback(&self, registry_key: &mlua::RegistryKey) -> Result<(), KurokoError> {
-        let callback: Function = self.lua
+        let callback: Function = self
+            .lua
             .registry_value(registry_key)
             .map_err(|e| KurokoError::Lua(e.to_string()))?;
-        callback.call::<()>(())
+        callback
+            .call::<()>(())
             .map_err(|e| KurokoError::Lua(e.to_string()))?;
         Ok(())
     }

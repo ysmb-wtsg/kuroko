@@ -160,7 +160,9 @@ impl TreeEntry {
             return;
         }
         // 展開中だったサブディレクトリのパスを記録
-        let expanded_dirs: Vec<PathBuf> = self.children.iter()
+        let expanded_dirs: Vec<PathBuf> = self
+            .children
+            .iter()
             .filter(|c| c.is_dir && c.expanded)
             .map(|c| c.path.clone())
             .collect();
@@ -221,7 +223,13 @@ mod tests {
     use super::*;
 
     /// テスト用にファイルシステムに依存しないTreeEntryを手動構築するヘルパー
-    fn make_entry(name: &str, is_dir: bool, depth: usize, expanded: bool, children: Vec<TreeEntry>) -> TreeEntry {
+    fn make_entry(
+        name: &str,
+        is_dir: bool,
+        depth: usize,
+        expanded: bool,
+        children: Vec<TreeEntry>,
+    ) -> TreeEntry {
         TreeEntry {
             path: PathBuf::from(format!("/test/{}", name)),
             name: name.to_string(),
@@ -241,16 +249,32 @@ mod tests {
         //   tests/      (collapsed)
         //     test1.rs
         //   README.md
-        make_entry("root", true, 0, true, vec![
-            make_entry("src", true, 1, true, vec![
-                make_entry("main.rs", false, 2, false, vec![]),
-                make_entry("lib.rs", false, 2, false, vec![]),
-            ]),
-            make_entry("tests", true, 1, false, vec![
-                make_entry("test1.rs", false, 2, false, vec![]),
-            ]),
-            make_entry("README.md", false, 1, false, vec![]),
-        ])
+        make_entry(
+            "root",
+            true,
+            0,
+            true,
+            vec![
+                make_entry(
+                    "src",
+                    true,
+                    1,
+                    true,
+                    vec![
+                        make_entry("main.rs", false, 2, false, vec![]),
+                        make_entry("lib.rs", false, 2, false, vec![]),
+                    ],
+                ),
+                make_entry(
+                    "tests",
+                    true,
+                    1,
+                    false,
+                    vec![make_entry("test1.rs", false, 2, false, vec![])],
+                ),
+                make_entry("README.md", false, 1, false, vec![]),
+            ],
+        )
     }
 
     // --- flatten ---
@@ -262,7 +286,10 @@ mod tests {
         let names: Vec<&str> = flat.iter().map(|e| e.name.as_str()).collect();
         // src is expanded so its children are visible
         // tests is collapsed so test1.rs is NOT visible
-        assert_eq!(names, vec!["root", "src", "main.rs", "lib.rs", "tests", "README.md"]);
+        assert_eq!(
+            names,
+            vec!["root", "src", "main.rs", "lib.rs", "tests", "README.md"]
+        );
     }
 
     #[test]
@@ -310,7 +337,18 @@ mod tests {
         tree.toggle(4, false);
         let flat = tree.flatten();
         let names: Vec<&str> = flat.iter().map(|e| e.name.as_str()).collect();
-        assert_eq!(names, vec!["root", "src", "main.rs", "lib.rs", "tests", "test1.rs", "README.md"]);
+        assert_eq!(
+            names,
+            vec![
+                "root",
+                "src",
+                "main.rs",
+                "lib.rs",
+                "tests",
+                "test1.rs",
+                "README.md"
+            ]
+        );
     }
 
     #[test]

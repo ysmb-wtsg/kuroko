@@ -1,10 +1,12 @@
 //! App構造体のキーボード・マウス入力処理。
 //! モード別のキーハンドリング、マウスイベント処理、ペーストイベント処理を担当する。
 
-use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind};
+use ratatui::crossterm::event::{
+    KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind,
+};
 
-use kuroko_core::{Action, AppEvent, Direction, FilePromptKind, Mode, PaneType};
 use kuroko_agent::AgentPane;
+use kuroko_core::{Action, AppEvent, Direction, FilePromptKind, Mode, PaneType};
 use kuroko_filetree::FileTreePane;
 use kuroko_terminal::TerminalPane;
 
@@ -16,7 +18,9 @@ impl App {
     /// ブラケットペーストシーケンスで包んでPTYに送信し、
     /// PTY内のアプリが改行を「送信」ではなく「テキスト挿入」として扱えるようにする。
     pub(super) fn handle_paste(&self, text: String) -> Vec<Action> {
-        let wants_raw = self.panes.get(&self.focused)
+        let wants_raw = self
+            .panes
+            .get(&self.focused)
             .map(|p| p.wants_raw_input())
             .unwrap_or(true);
 
@@ -42,16 +46,24 @@ impl App {
         match mouse.kind {
             MouseEventKind::ScrollUp => {
                 // フォーカス中のペインがターミナル/エージェントの場合、コピーモードに入ってスクロール
-                let is_terminal_or_agent = self.panes.get(&self.focused)
+                let is_terminal_or_agent = self
+                    .panes
+                    .get(&self.focused)
                     .map(|p| matches!(p.pane_type(), PaneType::Terminal | PaneType::Agent))
                     .unwrap_or(false);
                 if is_terminal_or_agent {
-                    let in_copy_mode = self.panes.get(&self.focused)
+                    let in_copy_mode = self
+                        .panes
+                        .get(&self.focused)
                         .and_then(|p| {
-                            p.as_any().downcast_ref::<TerminalPane>()
+                            p.as_any()
+                                .downcast_ref::<TerminalPane>()
                                 .map(|tp| tp.is_copy_mode())
-                                .or_else(|| p.as_any().downcast_ref::<AgentPane>()
-                                    .map(|ap| ap.is_copy_mode()))
+                                .or_else(|| {
+                                    p.as_any()
+                                        .downcast_ref::<AgentPane>()
+                                        .map(|ap| ap.is_copy_mode())
+                                })
                         })
                         .unwrap_or(false);
                     if !in_copy_mode {
@@ -64,23 +76,35 @@ impl App {
             }
             MouseEventKind::ScrollDown => {
                 // コピーモード中のみスクロールダウン
-                let in_copy_mode = self.panes.get(&self.focused)
+                let in_copy_mode = self
+                    .panes
+                    .get(&self.focused)
                     .and_then(|p| {
-                        p.as_any().downcast_ref::<TerminalPane>()
+                        p.as_any()
+                            .downcast_ref::<TerminalPane>()
                             .map(|tp| tp.is_copy_mode())
-                            .or_else(|| p.as_any().downcast_ref::<AgentPane>()
-                                .map(|ap| ap.is_copy_mode()))
+                            .or_else(|| {
+                                p.as_any()
+                                    .downcast_ref::<AgentPane>()
+                                    .map(|ap| ap.is_copy_mode())
+                            })
                     })
                     .unwrap_or(false);
                 if in_copy_mode {
                     self.copy_mode_scroll_down(3);
                     // 最新画面に到達したらコピーモードを終了
-                    let at_bottom = self.panes.get(&self.focused)
+                    let at_bottom = self
+                        .panes
+                        .get(&self.focused)
                         .and_then(|p| {
-                            p.as_any().downcast_ref::<TerminalPane>()
+                            p.as_any()
+                                .downcast_ref::<TerminalPane>()
                                 .map(|tp| tp.scroll_offset() == 0)
-                                .or_else(|| p.as_any().downcast_ref::<AgentPane>()
-                                    .map(|ap| ap.scroll_offset() == 0))
+                                .or_else(|| {
+                                    p.as_any()
+                                        .downcast_ref::<AgentPane>()
+                                        .map(|ap| ap.scroll_offset() == 0)
+                                })
                         })
                         .unwrap_or(false);
                     if at_bottom {
@@ -188,9 +212,10 @@ impl App {
             }
             KeyCode::Backspace => {
                 if let Some(ref mut prompt) = self.overlay.file_prompt
-                    && !matches!(prompt.kind, FilePromptKind::Delete { .. }) {
-                        prompt.input.pop();
-                    }
+                    && !matches!(prompt.kind, FilePromptKind::Delete { .. })
+                {
+                    prompt.input.pop();
+                }
             }
             _ => {}
         }
@@ -233,7 +258,9 @@ impl App {
         }
 
         // FileTree以外にフォーカスがある場合はInsertに戻す
-        let is_filetree = self.panes.get(&self.focused)
+        let is_filetree = self
+            .panes
+            .get(&self.focused)
             .map(|p| p.pane_type() == PaneType::FileTree)
             .unwrap_or(false);
         if !is_filetree {
@@ -243,21 +270,24 @@ impl App {
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => {
                 if let Some(pane) = self.panes.get_mut(&self.focused)
-                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>() {
-                        ft.move_down();
-                    }
+                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>()
+                {
+                    ft.move_down();
+                }
             }
             KeyCode::Char('k') | KeyCode::Up => {
                 if let Some(pane) = self.panes.get_mut(&self.focused)
-                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>() {
-                        ft.move_up();
-                    }
+                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>()
+                {
+                    ft.move_up();
+                }
             }
             KeyCode::Char(' ') => {
                 if let Some(pane) = self.panes.get_mut(&self.focused)
-                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>() {
-                        ft.toggle_selection();
-                    }
+                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>()
+                {
+                    ft.toggle_selection();
+                }
             }
             KeyCode::Char('d') => {
                 let paths = self.get_filetree_selected_paths();
@@ -271,7 +301,8 @@ impl App {
             KeyCode::Char('y') => {
                 let paths = self.get_filetree_selected_paths();
                 if !paths.is_empty() {
-                    let text: String = paths.iter()
+                    let text: String = paths
+                        .iter()
                         .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
                         .collect::<Vec<_>>()
                         .join("\n");
@@ -281,7 +312,8 @@ impl App {
             KeyCode::Char('Y') => {
                 let paths = self.get_filetree_selected_paths();
                 if !paths.is_empty() {
-                    let text: String = paths.iter()
+                    let text: String = paths
+                        .iter()
                         .map(|p| p.to_string_lossy().to_string())
                         .collect::<Vec<_>>()
                         .join("\n");
@@ -290,9 +322,10 @@ impl App {
             }
             KeyCode::Char('v') | KeyCode::Esc => {
                 if let Some(pane) = self.panes.get_mut(&self.focused)
-                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>() {
-                        ft.clear_selections();
-                    }
+                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>()
+                {
+                    ft.clear_selections();
+                }
                 return vec![Action::SetMode(Mode::Insert)];
             }
             _ => {}
@@ -344,7 +377,9 @@ impl App {
         }
 
         // non-rawペイン（FileTree等）にはAppEventとして渡す
-        let wants_raw = self.panes.get(&self.focused)
+        let wants_raw = self
+            .panes
+            .get(&self.focused)
             .map(|p| p.wants_raw_input())
             .unwrap_or(true);
 
@@ -383,7 +418,9 @@ impl App {
             }
         }
 
-        let wants_raw = self.panes.get(&self.focused)
+        let wants_raw = self
+            .panes
+            .get(&self.focused)
             .map(|p| p.wants_raw_input())
             .unwrap_or(true);
 
@@ -428,10 +465,22 @@ impl App {
             KeyCode::BackTab => vec![Action::FocusPrev],
 
             // ペインリサイズ（Shift + hjkl に相当するキー）
-            KeyCode::Char('H') => vec![Action::ResizePane { direction: Direction::Left, amount: 2 }],
-            KeyCode::Char('J') => vec![Action::ResizePane { direction: Direction::Down, amount: 2 }],
-            KeyCode::Char('K') => vec![Action::ResizePane { direction: Direction::Up, amount: 2 }],
-            KeyCode::Char('L') => vec![Action::ResizePane { direction: Direction::Right, amount: 2 }],
+            KeyCode::Char('H') => vec![Action::ResizePane {
+                direction: Direction::Left,
+                amount: 2,
+            }],
+            KeyCode::Char('J') => vec![Action::ResizePane {
+                direction: Direction::Down,
+                amount: 2,
+            }],
+            KeyCode::Char('K') => vec![Action::ResizePane {
+                direction: Direction::Up,
+                amount: 2,
+            }],
+            KeyCode::Char('L') => vec![Action::ResizePane {
+                direction: Direction::Right,
+                amount: 2,
+            }],
 
             // サイドパネルトグル
             KeyCode::Char('t') => vec![Action::ToggleTerminal],
@@ -448,11 +497,15 @@ impl App {
             }
             KeyCode::Char(']') if is_main_tab => vec![Action::NextTab],
             KeyCode::Char('[') if is_main_tab => vec![Action::PrevTab],
-            KeyCode::Char(c @ '1'..='9') if is_main_tab => vec![Action::SelectTab((c as usize) - ('1' as usize))],
+            KeyCode::Char(c @ '1'..='9') if is_main_tab => {
+                vec![Action::SelectTab((c as usize) - ('1' as usize))]
+            }
 
             // サイドターミナルタブ操作
             KeyCode::Char('n') if is_bottom_terminal => vec![Action::NewTerminalTab],
-            KeyCode::Char('x') | KeyCode::Char('w') if is_bottom_terminal => vec![Action::CloseTerminalTab],
+            KeyCode::Char('x') | KeyCode::Char('w') if is_bottom_terminal => {
+                vec![Action::CloseTerminalTab]
+            }
             KeyCode::Char('r') if is_bottom_terminal => {
                 self.overlay.rename_input = Some(String::new());
                 self.overlay.renaming_bottom_tab = true;
@@ -460,7 +513,9 @@ impl App {
             }
             KeyCode::Char(']') if is_bottom_terminal => vec![Action::NextTerminalTab],
             KeyCode::Char('[') if is_bottom_terminal => vec![Action::PrevTerminalTab],
-            KeyCode::Char(c @ '1'..='9') if is_bottom_terminal => vec![Action::SelectTerminalTab((c as usize) - ('1' as usize))],
+            KeyCode::Char(c @ '1'..='9') if is_bottom_terminal => {
+                vec![Action::SelectTerminalTab((c as usize) - ('1' as usize))]
+            }
 
             // コマンドパレット
             KeyCode::Char(':') => {
@@ -470,7 +525,9 @@ impl App {
 
             // コピーモード（ターミナル/エージェントペインにフォーカス中のみ）
             KeyCode::Enter => {
-                let is_terminal_or_agent = self.panes.get(&self.focused)
+                let is_terminal_or_agent = self
+                    .panes
+                    .get(&self.focused)
                     .map(|p| matches!(p.pane_type(), PaneType::Terminal | PaneType::Agent))
                     .unwrap_or(false);
                 if is_terminal_or_agent {
@@ -651,10 +708,14 @@ impl App {
     /// コピーモード: 選択範囲のテキストを取得する（選択なしなら画面全体）
     fn copy_mode_selected_text(&mut self) -> Option<String> {
         let pane = self.panes.get_mut(&self.focused)?;
-        pane.as_any_mut().downcast_mut::<TerminalPane>()
+        pane.as_any_mut()
+            .downcast_mut::<TerminalPane>()
             .map(|tp| tp.selected_text())
-            .or_else(|| pane.as_any_mut().downcast_mut::<AgentPane>()
-                .map(|ap| ap.selected_text()))
+            .or_else(|| {
+                pane.as_any_mut()
+                    .downcast_mut::<AgentPane>()
+                    .map(|ap| ap.selected_text())
+            })
     }
 
     /// コマンドパレット表示中のキー処理。
@@ -676,7 +737,9 @@ impl App {
                 vec![]
             }
             KeyCode::Enter => {
-                let action = self.overlay.command_palette
+                let action = self
+                    .overlay
+                    .command_palette
                     .as_ref()
                     .and_then(|cp| cp.selected_action());
                 self.overlay.command_palette = None;

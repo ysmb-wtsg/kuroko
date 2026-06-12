@@ -1,22 +1,22 @@
 # kuroko
 
-AIエージェント時代の「エディタに代わるホームベース」を目指すターミナルTUIアプリケーション。コマンド名は `krk`。
+A terminal TUI application aiming to be the home base that replaces the editor in the AI agent era. The command name is `krk`.
 
-Neovimのようなカスタマイズ性・拡張性を持ちつつ、AIエージェント操作を中心に据える。
+It keeps the customizability and extensibility of Neovim, while putting AI agent operation at the center.
 
-名前は歌舞伎の「黒子」から。AIエージェントがコードと人間の間に立ち、ソースコードを黒衣のように覆い隠す——「黒い画面」の上で。
+The name comes from the kabuki *kuroko* (黒子) — the black-clad stagehand the audience agrees not to see. AI agents stand between you and the code, veiling the source like a kuroko — on the "black screen" of your terminal.
 
-## 特徴
+## Features
 
-- **AIエージェント統合**: Claude Code, Codex, カスタムエージェントをPTYで埋め込み
-- **パネル管理**: ファイルツリー・ターミナル・Gitパネルのトグル、リサイズ対応
-- **タブシステム**: エージェントタブとターミナルタブを独立管理
-- **モーダル操作**: Normal / Insert / Select の3モード（Vimライク）
-- **Luaカスタマイズ**: `~/.config/krk/init.lua` で設定変更
-- **Gitパネル**: lazygit / tig / gitui などの外部ツールを右パネルに埋め込み
-- **ファイルツリー**: gitignore対応、ファイル操作（作成・リネーム・削除）、プレビュー
+- **AI agent integration**: Embed Claude Code, Codex, and custom agents via PTY
+- **Panel management**: Toggle and resize file tree, terminal, and git panels
+- **Tab system**: Agent tabs and terminal tabs managed independently
+- **Modal operation**: Normal / Insert / Select modes (Vim-like)
+- **Lua customization**: Configure via `~/.config/krk/init.lua`
+- **Git panel**: Embed external tools such as lazygit / tig / gitui in the right panel
+- **File tree**: gitignore-aware, file operations (create / rename / delete), preview
 
-## インストール
+## Installation
 
 ### Homebrew
 
@@ -24,9 +24,9 @@ Neovimのようなカスタマイズ性・拡張性を持ちつつ、AIエージ
 brew install ysmb-wtsg/tap/kuroko
 ```
 
-### ソースからビルド
+### Build from source
 
-Rust 1.96.0 以上が必要（[mise](https://mise.jdx.dev/) で管理推奨）。
+Requires Rust 1.96.0 or later (managing with [mise](https://mise.jdx.dev/) is recommended).
 
 ```sh
 git clone https://github.com/ysmb-wtsg/kuroko.git
@@ -34,76 +34,76 @@ cd kuroko
 cargo build --release
 ```
 
-バイナリは `target/release/krk` に生成される。
+The binary is generated at `target/release/krk`.
 
-## 使い方
+## Usage
 
 ```sh
 krk
 ```
 
-起動するとInsertモードでエージェントペインが表示される。
+On startup, the agent pane is shown in Insert mode.
 
-### モード切替
+### Switching modes
 
-| キー | 動作 |
+| Key | Action |
 |------|------|
-| `Esc` | Normalモードに切替 |
-| `i` | Insertモードに戻る |
+| `Esc` | Switch to Normal mode |
+| `i` | Back to Insert mode |
 
-### Normalモードのキーバインド
+### Normal mode keybindings
 
-| キー | 動作 |
+| Key | Action |
 |------|------|
-| `h/j/k/l` | 方向フォーカス移動 |
-| `Tab` / `Shift+Tab` | フォーカス順送り/逆送り |
-| `H/J/K/L` | ペインリサイズ |
-| `t` | ターミナルパネルのトグル |
-| `f` | ファイルツリーパネルのトグル |
-| `g` | Gitパネルのトグル |
-| `q` | 終了 |
+| `h/j/k/l` | Directional focus movement |
+| `Tab` / `Shift+Tab` | Cycle focus forward / backward |
+| `H/J/K/L` | Resize panes |
+| `t` | Toggle terminal panel |
+| `f` | Toggle file tree panel |
+| `g` | Toggle git panel |
+| `q` | Quit |
 
-### タブ操作（フォーカス中のパネルに作用）
+### Tab operations (act on the focused panel)
 
-| キー | 動作 |
+| Key | Action |
 |------|------|
-| `n` | 新しいタブを追加 |
-| `x` / `w` | アクティブタブを閉じる |
-| `[` / `]` | 前/次のタブに切り替え |
-| `1-9` | 番号指定でタブ選択 |
-| `r` | タブをリネーム |
+| `n` | Add a new tab |
+| `x` / `w` | Close the active tab |
+| `[` / `]` | Switch to previous / next tab |
+| `1-9` | Select tab by number |
+| `r` | Rename tab |
 
-## Luaカスタマイズ
+## Lua customization
 
-`~/.config/krk/init.lua` に設定ファイルを配置すると起動時に読み込まれる。
+Place a config file at `~/.config/krk/init.lua` and it is loaded on startup.
 
 ```lua
--- 利用可能なAPI
-krk.pane.toggle(type)      -- パネルのトグル（"terminal", "files"）
-krk.pane.focus(direction)  -- フォーカス移動（"next", "prev", "left", "right", "up", "down"）
-krk.opt.leader             -- リーダーキー設定
-krk.opt.main_pane          -- メインペイン種別（"claude-code", "codex", "terminal"）
-krk.opt.git_tool           -- Gitパネルのツール（"lazygit", "tig", "gitui"等）
+-- Available APIs
+krk.pane.toggle(type)      -- Toggle a panel ("terminal", "files")
+krk.pane.focus(direction)  -- Move focus ("next", "prev", "left", "right", "up", "down")
+krk.opt.leader             -- Leader key
+krk.opt.main_pane          -- Main pane type ("claude-code", "codex", "terminal")
+krk.opt.git_tool           -- Git panel tool ("lazygit", "tig", "gitui", etc.)
 ```
 
-## 技術スタック
+## Tech stack
 
-- **言語**: Rust (edition 2024)
+- **Language**: Rust (edition 2024)
 - **TUI**: ratatui 0.30 + crossterm
 - **PTY**: portable-pty + vt100
-- **プラグイン**: Lua 5.4 (mlua, vendored)
+- **Plugins**: Lua 5.4 (mlua, vendored)
 
-## ステータス
+## Status
 
-v0.1.0-alpha - 基本的なペイン管理・エージェント統合・Lua設定が動作する段階。
+v0.1.0-alpha — basic pane management, agent integration, and Lua configuration are working.
 
-以下の機能は計画中：
-- コマンドパレット
-- カスタムキーバインド（`krk.keymap.set`）
-- ターミナルコピーモード（スクロールバック）
-- セッション永続化
-- テーマカスタマイズ
+Planned:
+- Command palette
+- Custom keybindings (`krk.keymap.set`)
+- Terminal copy mode (scrollback)
+- Session persistence
+- Theme customization
 
-## ライセンス
+## License
 
 MIT

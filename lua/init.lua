@@ -1,13 +1,13 @@
--- kuroko デフォルト設定
--- ~/.config/krk/init.lua にコピーしてカスタマイズ可能
+-- kuroko default configuration
+-- Copy to ~/.config/krk/init.lua to customize
 
--- リーダーキー設定
+-- Leader key
 krk.opt.leader = " "
 
--- メインペイン設定（"claude-code", "codex", "terminal"）
+-- Main pane ("claude-code", "codex", "terminal")
 -- krk.opt.main_pane = "claude-code"
 
--- キーバインド例（Phase 4後半で有効化）
+-- Keybinding examples (enabled in late Phase 4)
 -- krk.keymap.set("n", "<leader>t", function()
 --     krk.pane.toggle("terminal")
 -- end)

@@ -1,12 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/aijin-core",
-    "crates/aijin-terminal",
-    "crates/aijin-filetree",
-    "crates/aijin-agent",
-    "crates/aijin-lua",
-    "crates/aijin-tui",
+    "crates/kuroko-core",
+    "crates/kuroko-terminal",
+    "crates/kuroko-filetree",
+    "crates/kuroko-agent",
+    "crates/kuroko-lua",
+    "crates/kuroko-tui",
 ]
 
 [workspace.package]
@@ -15,12 +15,12 @@ edition = "2024"
 license = "MIT"
 
 [workspace.dependencies]
-aijin-core = { path = "crates/aijin-core" }
-aijin-terminal = { path = "crates/aijin-terminal" }
-aijin-filetree = { path = "crates/aijin-filetree" }
-aijin-agent = { path = "crates/aijin-agent" }
-aijin-lua = { path = "crates/aijin-lua" }
-aijin-tui = { path = "crates/aijin-tui" }
+kuroko-core = { path = "crates/kuroko-core" }
+kuroko-terminal = { path = "crates/kuroko-terminal" }
+kuroko-filetree = { path = "crates/kuroko-filetree" }
+kuroko-agent = { path = "crates/kuroko-agent" }
+kuroko-lua = { path = "crates/kuroko-lua" }
+kuroko-tui = { path = "crates/kuroko-tui" }
 ratatui = "0.30"
 portable-pty = "0.8"
 vt100 = { path = "vendor/vt100" }
@@ -38,13 +38,16 @@ cargo_common_metadata = "allow"
 warnings = "deny"
 
 [package]
-name = "aijin"
+name = "kuroko"
 version.workspace = true
 edition.workspace = true
 
+[[bin]]
+name = "krk"
+path = "src/main.rs"
 
 [dependencies]
-aijin-tui.workspace = true
+kuroko-tui.workspace = true
 ratatui.workspace = true
 
 [lints]

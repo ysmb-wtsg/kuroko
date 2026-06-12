@@ -1,0 +1,13 @@
+[package]
+name = "kuroko-terminal"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kuroko-core.workspace = true
+ratatui.workspace = true
+portable-pty.workspace = true
+vt100.workspace = true
+
+[lints]
+workspace = true

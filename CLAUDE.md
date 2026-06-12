@@ -1,11 +1,11 @@
-# aijin
+# kuroko
 
 AIエージェント時代の「エディタに代わるホームベース」を目指すターミナルTUIアプリケーション。
 Neovimのようなカスタマイズ性・拡張性を持ちつつ、AIエージェント操作を中心に据える。
 
 ## 設計方針
 
-- Neovimの設計を踏襲: 3層モデル（Buffer/Window/Tab）、名前空間API（`aijin.*`）、イベント駆動
+- Neovimの設計を踏襲: 3層モデル（Buffer/Window/Tab）、名前空間API（`krk.*`）、イベント駆動
 - プラグインは `.setup(opts)` 規約
 - PTY読み取りは専用std::thread（メインスレッドをブロックしない）
 - Lua→Rust通信はmpscチャネル経由のAction送信（再入問題回避）

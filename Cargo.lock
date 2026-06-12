@@ -18,79 +18,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aijin"
-version = "0.1.0"
-dependencies = [
- "aijin-tui",
- "ratatui",
-]
-
-[[package]]
-name = "aijin-agent"
-version = "0.1.0"
-dependencies = [
- "aijin-core",
- "aijin-terminal",
- "anyhow",
- "portable-pty",
- "ratatui",
-]
-
-[[package]]
-name = "aijin-core"
-version = "0.1.0"
-dependencies = [
- "ratatui",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "aijin-filetree"
-version = "0.1.0"
-dependencies = [
- "aijin-core",
- "ignore",
- "ratatui",
-]
-
-[[package]]
-name = "aijin-lua"
-version = "0.1.0"
-dependencies = [
- "aijin-core",
- "mlua",
-]
-
-[[package]]
-name = "aijin-terminal"
-version = "0.1.0"
-dependencies = [
- "aijin-core",
- "portable-pty",
- "ratatui",
- "vt100",
-]
-
-[[package]]
-name = "aijin-tui"
-version = "0.1.0"
-dependencies = [
- "aijin-agent",
- "aijin-core",
- "aijin-filetree",
- "aijin-lua",
- "aijin-terminal",
- "arboard",
- "chrono",
- "ratatui",
- "serde",
- "serde_json",
- "syntect",
- "trash",
- "which",
-]
-
-[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -980,6 +907,79 @@ dependencies = [
  "hashbrown 0.16.1",
  "portable-atomic",
  "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kuroko"
+version = "0.1.0"
+dependencies = [
+ "kuroko-tui",
+ "ratatui",
+]
+
+[[package]]
+name = "kuroko-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "kuroko-core",
+ "kuroko-terminal",
+ "portable-pty",
+ "ratatui",
+]
+
+[[package]]
+name = "kuroko-core"
+version = "0.1.0"
+dependencies = [
+ "ratatui",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "kuroko-filetree"
+version = "0.1.0"
+dependencies = [
+ "ignore",
+ "kuroko-core",
+ "ratatui",
+]
+
+[[package]]
+name = "kuroko-lua"
+version = "0.1.0"
+dependencies = [
+ "kuroko-core",
+ "mlua",
+]
+
+[[package]]
+name = "kuroko-terminal"
+version = "0.1.0"
+dependencies = [
+ "kuroko-core",
+ "portable-pty",
+ "ratatui",
+ "vt100",
+]
+
+[[package]]
+name = "kuroko-tui"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "chrono",
+ "kuroko-agent",
+ "kuroko-core",
+ "kuroko-filetree",
+ "kuroko-lua",
+ "kuroko-terminal",
+ "ratatui",
+ "serde",
+ "serde_json",
+ "syntect",
+ "trash",
+ "which",
 ]
 
 [[package]]

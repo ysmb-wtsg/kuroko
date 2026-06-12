@@ -1,0 +1,12 @@
+[package]
+name = "kuroko-filetree"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kuroko-core.workspace = true
+ratatui.workspace = true
+ignore = "0.4"
+
+[lints]
+workspace = true

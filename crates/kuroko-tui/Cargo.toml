@@ -1,0 +1,22 @@
+[package]
+name = "kuroko-tui"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kuroko-core.workspace = true
+kuroko-terminal.workspace = true
+kuroko-filetree.workspace = true
+kuroko-agent.workspace = true
+kuroko-lua.workspace = true
+ratatui.workspace = true
+arboard = "3"
+trash = "5"
+chrono.workspace = true
+which.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+syntect = { version = "5", default-features = false, features = ["default-fancy"] }
+
+[lints]
+workspace = true

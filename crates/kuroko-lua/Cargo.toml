@@ -1,0 +1,11 @@
+[package]
+name = "kuroko-lua"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kuroko-core.workspace = true
+mlua = { version = "0.10", features = ["lua54", "send", "vendored"] }
+
+[lints]
+workspace = true

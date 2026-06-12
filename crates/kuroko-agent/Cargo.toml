@@ -1,0 +1,14 @@
+[package]
+name = "kuroko-agent"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+kuroko-core.workspace = true
+kuroko-terminal.workspace = true
+ratatui.workspace = true
+portable-pty.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

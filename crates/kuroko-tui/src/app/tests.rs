@@ -563,7 +563,10 @@ fn redraw_action_is_noop() {
 
 #[test]
 fn tab_sends_horizontal_tab() {
-    assert_eq!(super::key_to_bytes(&press_key(KeyCode::Tab)), Some(vec![b'\t']));
+    assert_eq!(
+        super::key_to_bytes(&press_key(KeyCode::Tab)),
+        Some(vec![b'\t'])
+    );
 }
 
 #[test]

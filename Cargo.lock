@@ -873,7 +873,7 @@ dependencies = [
 
 [[package]]
 name = "kuroko"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "kuroko-tui",
  "ratatui",
@@ -881,7 +881,7 @@ dependencies = [
 
 [[package]]
 name = "kuroko-agent"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "kuroko-core",
@@ -892,7 +892,7 @@ dependencies = [
 
 [[package]]
 name = "kuroko-core"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ratatui",
  "thiserror 2.0.18",
@@ -900,7 +900,7 @@ dependencies = [
 
 [[package]]
 name = "kuroko-filetree"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "ignore",
  "kuroko-core",
@@ -909,7 +909,7 @@ dependencies = [
 
 [[package]]
 name = "kuroko-lua"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "kuroko-core",
  "mlua",
@@ -917,7 +917,7 @@ dependencies = [
 
 [[package]]
 name = "kuroko-terminal"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "kuroko-core",
  "portable-pty",
@@ -927,7 +927,7 @@ dependencies = [
 
 [[package]]
 name = "kuroko-tui"
-version = "0.2.2"
+version = "0.2.3"
 dependencies = [
  "arboard",
  "chrono",

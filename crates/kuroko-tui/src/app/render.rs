@@ -13,6 +13,7 @@ use kuroko_agent::{AgentPane, AgentStatus};
 use kuroko_core::layout::SplitDirection;
 use kuroko_core::theme;
 use kuroko_core::{FilePromptKind, PaneType};
+use kuroko_terminal::TerminalPane;
 
 use super::App;
 use super::overlay::MessageLevel;
@@ -341,6 +342,32 @@ impl App {
                     .bg(bg)
                     .add_modifier(Modifier::BOLD),
             ));
+
+            // コピーモード中はタイトルバッジの右にCOPYバッジを表示する
+            // （旧来はペイン本体最下行に全幅バーで描いていた）
+            let copy = pane
+                .as_any()
+                .downcast_ref::<TerminalPane>()
+                .map(|tp| (tp.is_copy_mode(), tp.scroll_offset()))
+                .or_else(|| {
+                    pane.as_any()
+                        .downcast_ref::<AgentPane>()
+                        .map(|ap| (ap.is_copy_mode(), ap.scroll_offset()))
+                });
+            if let Some((true, offset)) = copy {
+                let label = if offset > 0 {
+                    format!(" COPY +{offset} ")
+                } else {
+                    " COPY ".to_string()
+                };
+                spans.push(Span::styled(
+                    label,
+                    Style::default()
+                        .fg(t.text_on_accent)
+                        .bg(t.accent_warning)
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
         }
 
         // エージェント状態の集約表示（非フォーカスのエージェントも対象）

@@ -411,29 +411,7 @@ impl TerminalPane {
         }
         frame.render_widget(widget, area);
 
-        // コピーモード時は最下行にインジケータを表示
-        if self.copy_mode && area.height > 0 {
-            let scroll_info = if self.scroll_offset > 0 {
-                format!(" [COPY +{}] ", self.scroll_offset)
-            } else {
-                " [COPY] ".to_string()
-            };
-            let t = theme::get();
-            let line = ratatui::text::Line::from(ratatui::text::Span::styled(
-                scroll_info,
-                Style::default()
-                    .fg(t.text_on_accent)
-                    .bg(t.accent_warning)
-                    .add_modifier(ratatui::style::Modifier::BOLD),
-            ));
-            let indicator_area = Rect {
-                x: area.x,
-                y: area.y + area.height.saturating_sub(1),
-                width: area.width,
-                height: 1,
-            };
-            frame.render_widget(ratatui::widgets::Paragraph::new(line), indicator_area);
-        }
+        // コピーモードのインジケータはステータスバー側（render_status_bar）でタイトル横に表示する
 
         // PTY終了時は最下行に終了インジケータを表示（コピーモード中は上書きしない）
         if self.pty_dead && !self.copy_mode && area.height > 0 {

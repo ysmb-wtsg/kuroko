@@ -481,7 +481,10 @@ impl App {
                     ];
                 }
             }
-            KeyCode::Char('q') | KeyCode::Esc => {
+            // Enter/q/Esc で終了。グローバルレイヤーへは戻さずエージェント（直通）に戻る
+            // （コピーモード中は global_layer は既に false のため ExitCopyMode のみでよい）。
+            // Enter はグローバルレイヤーからの開始キーと対になるトグルとして機能する。
+            KeyCode::Enter | KeyCode::Char('q') | KeyCode::Esc => {
                 return vec![Action::ExitCopyMode];
             }
             _ => {}

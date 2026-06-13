@@ -317,10 +317,37 @@ impl App {
 
         let mut spans = Vec::new();
 
-        // グローバルレイヤー中はバッジを先頭に表示する
-        if self.global_layer {
+        // 先頭バッジ: グローバルレイヤー中はGLOBAL、コピーモード中はCOPYを表示する。
+        // どちらもアプリの「特殊な入力状態」を表し相互排他なので、同じスロット・同じ
+        // スタイルで入れ替えて表示する（コピーモード中はglobal_layerは必ずfalse）。
+        let copy_offset = self
+            .panes
+            .get(&self.focused)
+            .and_then(|p| {
+                let any = p.as_any();
+                any.downcast_ref::<TerminalPane>()
+                    .map(|tp| (tp.is_copy_mode(), tp.scroll_offset()))
+                    .or_else(|| {
+                        any.downcast_ref::<AgentPane>()
+                            .map(|ap| (ap.is_copy_mode(), ap.scroll_offset()))
+                    })
+            })
+            .filter(|(in_copy, _)| *in_copy)
+            .map(|(_, offset)| offset);
+        let leading_badge = if self.global_layer {
+            Some(" GLOBAL ".to_string())
+        } else {
+            copy_offset.map(|offset| {
+                if offset > 0 {
+                    format!(" COPY +{offset} ")
+                } else {
+                    " COPY ".to_string()
+                }
+            })
+        };
+        if let Some(label) = leading_badge {
             spans.push(Span::styled(
-                " GLOBAL ",
+                label,
                 Style::default()
                     .fg(t.text_on_accent)
                     .bg(t.accent_warning)
@@ -342,32 +369,6 @@ impl App {
                     .bg(bg)
                     .add_modifier(Modifier::BOLD),
             ));
-
-            // コピーモード中はタイトルバッジの右にCOPYバッジを表示する
-            // （旧来はペイン本体最下行に全幅バーで描いていた）
-            let copy = pane
-                .as_any()
-                .downcast_ref::<TerminalPane>()
-                .map(|tp| (tp.is_copy_mode(), tp.scroll_offset()))
-                .or_else(|| {
-                    pane.as_any()
-                        .downcast_ref::<AgentPane>()
-                        .map(|ap| (ap.is_copy_mode(), ap.scroll_offset()))
-                });
-            if let Some((true, offset)) = copy {
-                let label = if offset > 0 {
-                    format!(" COPY +{offset} ")
-                } else {
-                    " COPY ".to_string()
-                };
-                spans.push(Span::styled(
-                    label,
-                    Style::default()
-                        .fg(t.text_on_accent)
-                        .bg(t.accent_warning)
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
         }
 
         // エージェント状態の集約表示（非フォーカスのエージェントも対象）
@@ -466,7 +467,7 @@ impl App {
             ("g / G", "Scroll to top / bottom"),
             ("v", "Start / clear selection"),
             ("y", "Copy selection and exit"),
-            ("q / Esc", "Exit copy mode"),
+            ("Enter / q / Esc", "Exit copy mode"),
         ];
 
         let width = 56_u16.min(area.width);

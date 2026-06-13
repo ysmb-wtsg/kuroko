@@ -543,6 +543,23 @@ fn enter_in_global_layer_starts_copy_mode_and_exits_layer() {
     assert!(!app.global_layer);
 }
 
+#[test]
+fn enter_in_copy_mode_exits_copy_mode_to_direct() {
+    let mut app = App::new();
+    // コピーモード開始（グローバルレイヤー経由でレイヤーは抜ける）
+    app.global_layer = true;
+    app.handle_global_key(press_key(KeyCode::Enter))
+        .into_iter()
+        .for_each(|a| app.dispatch_action(a));
+    assert!(!app.global_layer);
+
+    // コピーモード中のEnterは終了アクションを返す（グローバルへは戻らない）
+    let actions = app.handle_copy_mode_key(press_key(KeyCode::Enter));
+    assert!(actions.iter().any(|a| matches!(a, Action::ExitCopyMode)));
+    actions.into_iter().for_each(|a| app.dispatch_action(a));
+    assert!(!app.global_layer);
+}
+
 // ===========================================================================
 // 10. Redrawアクション
 // ===========================================================================

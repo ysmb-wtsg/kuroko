@@ -2,11 +2,11 @@
 
 ![kuroko screenshot](docs/images/screenshot.png)
 
-**kuroko** is a terminal TUI that aims to be the home base that replaces the editor in the AI agent era.
+**kuroko** is a terminal-native IDE for the AI agent era.
+
+It's not an editor with AI bolted on — it's an environment built around agents, with the customizability and extensibility of Neovim.
 
 The command name is `krk`.
-
-It keeps the customizability and extensibility of Neovim, while putting AI agent operation at the center.
 
 > [!NOTE]
 > The name comes from the kabuki *kuroko* (黒子) — the black-clad stagehand the audience agrees not to see. AI agents stand between you and the code, veiling the source like a kuroko — on the "black screen" of your terminal.
@@ -119,13 +119,6 @@ end
 
 > [!WARNING]
 > Binding keys in the `direct` context steals them from apps running inside panes. Prefer the `global` context unless you specifically want a key to bypass the focused tool.
-
-## 🧩 Tech stack
-
-- **Language**: Rust (edition 2024)
-- **TUI**: ratatui 0.30 + crossterm
-- **PTY**: portable-pty + vt100
-- **Plugins**: Lua 5.4 (mlua, vendored)
 
 ## 📄 License
 

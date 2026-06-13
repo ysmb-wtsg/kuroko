@@ -1,14 +1,15 @@
-# kuroko
+# 🥷 `kuroko`
 
 ![kuroko screenshot](docs/images/screenshot.png)
 
-A terminal TUI application aiming to be the home base that replaces the editor in the AI agent era. The command name is `krk`.
+**kuroko** is a terminal TUI that aims to be the home base that replaces the editor in the AI agent era. The command name is `krk`.
 
 It keeps the customizability and extensibility of Neovim, while putting AI agent operation at the center.
 
-The name comes from the kabuki *kuroko* (黒子) — the black-clad stagehand the audience agrees not to see. AI agents stand between you and the code, veiling the source like a kuroko — on the "black screen" of your terminal.
+> [!NOTE]
+> The name comes from the kabuki *kuroko* (黒子) — the black-clad stagehand the audience agrees not to see. AI agents stand between you and the code, veiling the source like a kuroko — on the "black screen" of your terminal.
 
-## Features
+## ✨ Features
 
 - **AI agent integration**: Embed Claude Code, Codex, and custom agents via PTY
 - **Panel management**: Toggle and resize file tree, terminal, and git panels
@@ -18,7 +19,12 @@ The name comes from the kabuki *kuroko* (黒子) — the black-clad stagehand th
 - **Git panel**: Embed external tools such as lazygit / tig / gitui in the right panel
 - **File tree**: gitignore-aware, file operations (create / rename / delete), preview
 
-## Installation
+## ⚡️ Requirements
+
+- A terminal emulator (kitty keyboard protocol recommended for `Shift+Enter`)
+- For building from source: Rust 1.96.0 or later
+
+## 📦 Installation
 
 ### Homebrew
 
@@ -38,7 +44,7 @@ cargo build --release
 
 The binary is generated at `target/release/krk`.
 
-## Usage
+## 🚀 Usage
 
 ```sh
 krk
@@ -48,7 +54,8 @@ By default every key — including `Esc` and `Ctrl` combinations — goes straig
 
 Press `Ctrl+g` to enter the **global layer**, where single keystrokes manage panes. Press `Ctrl+g`, `Esc`, or `i` to go back to direct input. The status bar shows a `GLOBAL` badge while the layer is active.
 
-In an agent / terminal pane, `Enter` submits and **`Ctrl+j` inserts a newline** for multi-line input. `Shift+Enter` and `Alt+Enter` also insert a newline on terminals that report them (kitty keyboard protocol); since many terminals cannot distinguish `Shift+Enter` from `Enter`, `Ctrl+j` is the portable shortcut.
+> [!TIP]
+> In an agent / terminal pane, `Enter` submits and **`Ctrl+j` inserts a newline** for multi-line input. `Shift+Enter` and `Alt+Enter` also insert a newline on terminals that report them (kitty keyboard protocol); since many terminals cannot distinguish `Shift+Enter` from `Enter`, `Ctrl+j` is the portable shortcut.
 
 ### Global layer keybindings
 
@@ -74,7 +81,7 @@ In an agent / terminal pane, `Enter` submits and **`Ctrl+j` inserts a newline** 
 | `1-9` | Select tab by number |
 | `r` | Rename tab |
 
-## Lua customization
+## ⚙️ Configuration
 
 Place a config file at `~/.config/krk/init.lua` and it is loaded on startup.
 
@@ -92,7 +99,7 @@ krk.keymap.set(context, key, callback)
 krk.keymap.set_toggle_key(key)  -- Change the global layer toggle (default: "<C-g>")
 ```
 
-Example — direct `Ctrl+h/j/k/l` focus movement (note: this steals those keys from apps inside panes):
+Example — direct `Ctrl+h/j/k/l` focus movement:
 
 ```lua
 for key, dir in pairs({ ["<C-h>"] = "left", ["<C-j>"] = "down", ["<C-k>"] = "up", ["<C-l>"] = "right" }) do
@@ -100,14 +107,17 @@ for key, dir in pairs({ ["<C-h>"] = "left", ["<C-j>"] = "down", ["<C-k>"] = "up"
 end
 ```
 
-## Tech stack
+> [!WARNING]
+> Binding keys in the `direct` context steals them from apps running inside panes. Prefer the `global` context unless you specifically want a key to bypass the focused tool.
+
+## 🧩 Tech stack
 
 - **Language**: Rust (edition 2024)
 - **TUI**: ratatui 0.30 + crossterm
 - **PTY**: portable-pty + vt100
 - **Plugins**: Lua 5.4 (mlua, vendored)
 
-## Status
+## 🚧 Status
 
 v0.2.0 — modeless input (global layer), pane management, agent integration, and Lua configuration are working.
 
@@ -115,6 +125,6 @@ Planned:
 - Session persistence (tabs)
 - Theme customization
 
-## License
+## 📄 License
 
 MIT

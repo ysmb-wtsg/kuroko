@@ -1,6 +1,6 @@
 # 🥷 `kuroko`
 
-![kuroko screenshot](docs/images/screenshot.png)
+![kuroko demo](docs/images/demo.gif)
 
 **kuroko** is a terminal-native IDE for the AI agent era.
 

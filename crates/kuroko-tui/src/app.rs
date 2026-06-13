@@ -902,6 +902,9 @@ fn key_to_bytes(key: &KeyEvent) -> Option<Vec<u8>> {
         }
         KeyCode::Backspace => Some(vec![0x7f]),
         KeyCode::Tab => Some(vec![b'\t']),
+        // Shift+Tab はcrosstermでBackTabとして届く。CSI Z（逆タブ）を送る。
+        // 多くのCLIエージェント（Claude Code等）はこれをモード切替に使う。
+        KeyCode::BackTab => Some(b"\x1b[Z".to_vec()),
         KeyCode::Esc => Some(vec![0x1b]),
         KeyCode::Up => Some(b"\x1b[A".to_vec()),
         KeyCode::Down => Some(b"\x1b[B".to_vec()),

@@ -556,3 +556,22 @@ fn redraw_action_is_noop() {
     assert_eq!(app.global_layer, layer_before);
     assert_eq!(app.focused, focused_before);
 }
+
+// ===========================================================================
+// 11. key_to_bytes: PTYへ送るバイト列変換
+// ===========================================================================
+
+#[test]
+fn tab_sends_horizontal_tab() {
+    assert_eq!(super::key_to_bytes(&press_key(KeyCode::Tab)), Some(vec![b'\t']));
+}
+
+#[test]
+fn backtab_sends_csi_z() {
+    // Shift+Tab（crosstermではBackTab）は逆タブCSI Zを送る。
+    // これがないとエージェント（Claude Code等）のモード切替が効かない。
+    assert_eq!(
+        super::key_to_bytes(&press_key(KeyCode::BackTab)),
+        Some(b"\x1b[Z".to_vec())
+    );
+}

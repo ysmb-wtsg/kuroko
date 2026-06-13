@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# push前にCIのfmt/clippyチェックをローカル再現し、書式・lint違反でのCI失敗を防ぐ。
+set -euo pipefail
+
+echo "pre-push: cargo fmt --all -- --check"
+cargo fmt --all -- --check
+
+echo "pre-push: cargo clippy --workspace"
+cargo clippy --workspace
+
+echo "pre-push: OK"

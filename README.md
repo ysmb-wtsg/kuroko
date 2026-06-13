@@ -46,6 +46,14 @@ cargo build --release
 
 The binary is generated at `target/release/krk`.
 
+### Development
+
+Enable the git hooks to run `cargo fmt --check` and `cargo clippy` before every push:
+
+```sh
+git config core.hooksPath .githooks
+```
+
 ## 🚀 Usage
 
 ```sh

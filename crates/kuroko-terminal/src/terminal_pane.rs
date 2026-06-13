@@ -268,12 +268,16 @@ impl TerminalPane {
     }
 
     /// 選択範囲のテキストを取得する。
-    /// 選択なしなら画面全体のテキストを返す。
+    /// 選択なしならカーソル行のテキストを返す。
     ///
-    /// @returns 選択範囲または画面全体のテキスト
+    /// @returns 選択範囲またはカーソル行のテキスト
     pub fn selected_text(&mut self) -> String {
         let Some((anchor_offset, anchor_row)) = self.selection_anchor else {
-            return self.parser.screen().contents();
+            // 選択なし: カーソル行1行のみをコピーする
+            let row = self.copy_cursor.0;
+            let screen = self.parser.screen();
+            let cols = screen.size().1;
+            return screen.contents_between(row, 0, row, cols);
         };
         let anchor_logical = Self::logical_row(anchor_offset, anchor_row);
         let cursor_logical = Self::logical_row(self.scroll_offset, self.copy_cursor.0);
@@ -283,17 +287,22 @@ impl TerminalPane {
             (cursor_logical, anchor_logical)
         };
 
-        // 選択範囲全体が画面内に収まるscroll_offsetを計算する。
-        // 論理行Lが画面行Rになるにはscroll_offset = R - L。
-        // start_logicalを画面行0に配置するには offset = -start_logical。
+        // 選択範囲がスクロールバック領域へ伸びる場合に備えてscroll_offsetを調整する。
+        // 論理行Lが画面行Rになるには R = L + offset。
+        // start_logicalが負（過去）なら画面行0に配置するため offset = -start_logical。
+        // start_logicalが0以上（現在画面内）なら調整不要で offset = 0。
         let needed_offset = (-start_logical).max(0) as usize;
         let original_offset = self.scroll_offset;
         self.parser.set_scrollback(needed_offset);
 
-        let num_lines = (end_logical - start_logical) as u16;
+        // 調整後の画面行に変換してから範囲を読み出す。
+        // 以前は常に画面行0始点で読み出しており、現在画面内の選択で
+        // 誤った先頭行（例: 6-10行選択で1-5行）をコピーするバグがあった。
+        let start_row = (start_logical + needed_offset as isize) as u16;
+        let end_row = (end_logical + needed_offset as isize) as u16;
         let screen = self.parser.screen();
         let cols = screen.size().1;
-        let text = screen.contents_between(0, 0, num_lines, cols);
+        let text = screen.contents_between(start_row, 0, end_row, cols);
 
         // 元のスクロール位置に戻す
         self.parser.set_scrollback(original_offset);
@@ -664,5 +673,62 @@ mod tests {
         pane.process_output(b"hello");
         let text = pane.screen_text();
         assert!(text.contains("hello"));
+    }
+
+    #[test]
+    fn selected_text_without_selection_returns_cursor_line() {
+        let mut pane = create_test_pane();
+        for i in 0..10 {
+            pane.process_output(format!("line {i}\r\n").as_bytes());
+        }
+        pane.enter_copy_mode();
+        // カーソルを3行目（line 2）に置く
+        pane.copy_cursor = (2, 0);
+
+        // 選択なしでyすると、画面全体ではなくカーソル行1行だけが返る
+        let text = pane.selected_text();
+        assert_eq!(text.trim_end(), "line 2");
+        assert!(!text.contains("line 0"));
+        assert!(!text.contains("line 3"));
+    }
+
+    #[test]
+    fn selected_text_copies_selected_range_not_from_top() {
+        let mut pane = create_test_pane();
+        for i in 0..10 {
+            pane.process_output(format!("line {i}\r\n").as_bytes());
+        }
+        pane.enter_copy_mode();
+
+        // 画面行5（line 5）でアンカーを張り、画面行9（line 9）までカーソルを移動
+        pane.copy_cursor = (5, 0);
+        pane.toggle_selection();
+        pane.copy_cursor = (9, 0);
+
+        let text = pane.selected_text();
+        let lines: Vec<&str> = text.lines().map(|l| l.trim_end()).collect();
+        // 5-9行目が返り、先頭の0-4行目は含まれない
+        assert_eq!(
+            lines,
+            vec!["line 5", "line 6", "line 7", "line 8", "line 9"]
+        );
+        assert!(!text.contains("line 0"));
+        assert!(!text.contains("line 4"));
+    }
+
+    #[test]
+    fn selected_text_single_line_selection() {
+        let mut pane = create_test_pane();
+        for i in 0..10 {
+            pane.process_output(format!("line {i}\r\n").as_bytes());
+        }
+        pane.enter_copy_mode();
+
+        // 同一行でアンカーとカーソルを置く（1行だけ選択）
+        pane.copy_cursor = (6, 0);
+        pane.toggle_selection();
+
+        let text = pane.selected_text();
+        assert_eq!(text.trim_end(), "line 6");
     }
 }

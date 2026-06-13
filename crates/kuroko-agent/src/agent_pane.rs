@@ -149,7 +149,7 @@ impl AgentPane {
     pub fn toggle_selection(&mut self) {
         self.inner.toggle_selection();
     }
-    /// 選択範囲のテキストを返す（選択なしなら画面全体）
+    /// 選択範囲のテキストを返す（選択なしならカーソル行）
     pub fn selected_text(&mut self) -> String {
         self.inner.selected_text()
     }

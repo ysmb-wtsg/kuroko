@@ -2,7 +2,9 @@
 
 ![kuroko screenshot](docs/images/screenshot.png)
 
-**kuroko** is a terminal TUI that aims to be the home base that replaces the editor in the AI agent era. The command name is `krk`.
+**kuroko** is a terminal TUI that aims to be the home base that replaces the editor in the AI agent era.
+
+The command name is `krk`.
 
 It keeps the customizability and extensibility of Neovim, while putting AI agent operation at the center.
 
@@ -116,14 +118,6 @@ end
 - **TUI**: ratatui 0.30 + crossterm
 - **PTY**: portable-pty + vt100
 - **Plugins**: Lua 5.4 (mlua, vendored)
-
-## 🚧 Status
-
-v0.2.0 — modeless input (global layer), pane management, agent integration, and Lua configuration are working.
-
-Planned:
-- Session persistence (tabs)
-- Theme customization
 
 ## 📄 License
 

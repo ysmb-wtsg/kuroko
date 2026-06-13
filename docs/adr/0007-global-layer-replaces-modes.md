@@ -40,3 +40,5 @@ Insert/Normal/Selectのモードモデルには以下の問題があった。
   - `Ctrl+j`: raw mode中はEnter(CR)と区別でき全端末に届くが、`Ctrl+j`はエージェント（Claude Code等）のマルチライン改行挿入に使われるため、直通中にその用途を奪う。改行はモードレスの主要ユースケースであり不採用
   - `Ctrl+g`: 改行系と無関係・全端末に確実に届く・エージェントが入力に使わない。emacs/readlineのkeyboard-quitとのみ衝突するが影響は限定的。これを採用
 - 用途が衝突するユーザーは`set_toggle_key`で変更する
+- 直通中の改行: Enterは送信/確定、`Ctrl+j`(LF)は改行挿入とする。kittyキーボードプロトコル（`DISAMBIGUATE_ESCAPE_CODES`）を対応端末で有効化しEsc/Ctrl系の曖昧性を解消するが、DISAMBIGUATEはShift単独修飾を区別しないため`Shift+Enter`は非対応端末で検出できない。よって`Ctrl+j`をポータブルな改行手段として正式化し、`Shift+Enter`/`Alt+Enter`は対応端末でのみLFとして送る。全キーをCSI u化する`REPORT_ALL_KEYS_AS_ESCAPE_CODES`はIME入力を壊すリスクがあるため採用しない
+- フォーカス中ペインの端末カーソルを`set_cursor_position`で表示する。直通かつ非オーバーレイ時のみとし、グローバルレイヤー中・コピーモード中・スクロール中・カーソル非表示(DECTCEM)時は出さない。レイヤー中は入力がペインに行かないため非表示にし、入力先を視覚的に区別する

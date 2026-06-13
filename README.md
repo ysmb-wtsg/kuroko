@@ -46,6 +46,8 @@ By default every key — including `Esc` and `Ctrl` combinations — goes straig
 
 Press `Ctrl+g` to enter the **global layer**, where single keystrokes manage panes. Press `Ctrl+g`, `Esc`, or `i` to go back to direct input. The status bar shows a `GLOBAL` badge while the layer is active.
 
+In an agent / terminal pane, `Enter` submits and **`Ctrl+j` inserts a newline** for multi-line input. `Shift+Enter` and `Alt+Enter` also insert a newline on terminals that report them (kitty keyboard protocol); since many terminals cannot distinguish `Shift+Enter` from `Enter`, `Ctrl+j` is the portable shortcut.
+
 ### Global layer keybindings
 
 | Key | Action |

@@ -7,7 +7,7 @@ use ratatui::style::Color;
 
 /// アプリ全体のデザイントークン。
 /// 全色はoklchベースで設計し、sRGB変換値を `Color::Rgb` で保持する。
-/// アクセントカラーは役割ベースの4色（primary/positive/warning/error）に限定する。
+/// アクセントカラーは役割ベースの5色（primary/positive/warning/error/secondary）に限定する。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Theme {
     // --- Surface（背景色） ---
@@ -68,6 +68,10 @@ pub struct Theme {
     /// エラーアクセント。エラーメッセージ表示。
     /// oklch(0.65 0.130 25)
     pub accent_error: Color,
+    /// セカンダリアクセント。primary/positive/warningと識別が必要な第3カテゴリ
+    /// （FileTreeペインのステータス表示等）に用いる。
+    /// oklch(0.72 0.110 300)
+    pub accent_secondary: Color,
 }
 
 impl Theme {
@@ -93,6 +97,7 @@ impl Theme {
         accent_positive: Color::Rgb(120, 210, 120),
         accent_warning: Color::Rgb(220, 170, 90),
         accent_error: Color::Rgb(225, 110, 110),
+        accent_secondary: Color::Rgb(184, 150, 224),
     };
 }
 

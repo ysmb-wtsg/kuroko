@@ -310,7 +310,7 @@ impl App {
     }
 
     /// ステータスバーを描画する。
-    /// フォーカス中ペイン種別・グローバルレイヤー状態・エージェント状態・一時メッセージを集約表示する。
+    /// フォーカス中ペインのタイトル・グローバルレイヤー状態・エージェント状態・一時メッセージを集約表示する。
     fn render_status_bar(&self, frame: &mut ratatui::Frame, area: Rect) {
         let t = theme::get();
 
@@ -327,27 +327,19 @@ impl App {
             ));
         }
 
-        // フォーカス中ペインの種別バッジ（旧モード表示の代替）。
-        // レイヤー状態のGLOBALバッジを目立たせるため、こちらは中立色のチップにする
-        let pane_label = match self.panes.get(&self.focused).map(|p| p.pane_type()) {
-            Some(PaneType::Agent) => "AGENT",
-            Some(PaneType::Terminal) => "TERM",
-            Some(PaneType::FileTree) => "FILES",
-            None => "-",
-        };
-        spans.push(Span::styled(
-            format!(" {pane_label} "),
-            Style::default()
-                .fg(t.text_primary)
-                .bg(t.surface_highlight)
-                .add_modifier(Modifier::BOLD),
-        ));
-
-        // フォーカス中ペインのタイトル
+        // フォーカス中ペインのタイトルを種別ごとの色付きバッジで表示する
         if let Some(pane) = self.panes.get(&self.focused) {
+            let bg = match pane.pane_type() {
+                PaneType::Agent => t.accent_primary,
+                PaneType::Terminal => t.accent_positive,
+                PaneType::FileTree => t.accent_secondary,
+            };
             spans.push(Span::styled(
                 format!(" {} ", pane.title()),
-                Style::default().fg(t.text_muted),
+                Style::default()
+                    .fg(t.text_on_accent)
+                    .bg(bg)
+                    .add_modifier(Modifier::BOLD),
             ));
         }
 

@@ -201,6 +201,10 @@ impl App {
 
     /// メインイベントループを実行する。
     pub fn run(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        // syntectの構文・テーマセットを別スレッドで事前ロードしておく。
+        // 初回プレビュー表示時のロード待ち（数秒）を避ける。
+        std::thread::spawn(overlay::warm_highlight_cache);
+
         // マウスキャプチャとブラケットペーストモードを有効化
         execute!(io::stdout(), EnableMouseCapture, EnableBracketedPaste)?;
 

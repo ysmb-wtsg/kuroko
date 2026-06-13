@@ -10,7 +10,8 @@ kuroko-terminal.workspace = true
 kuroko-filetree.workspace = true
 kuroko-agent.workspace = true
 kuroko-lua.workspace = true
-ratatui.workspace = true
+# unstable-rendered-line-info: Paragraph::line_count（折り返し後の行数取得）に必要
+ratatui = { workspace = true, features = ["unstable-rendered-line-info"] }
 arboard = "3"
 trash = "5"
 chrono.workspace = true

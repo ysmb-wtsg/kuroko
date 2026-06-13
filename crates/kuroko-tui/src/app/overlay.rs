@@ -98,6 +98,26 @@ impl HighlightedLine {
     }
 }
 
+/// syntectの構文・テーマセットを事前ロード（ウォームアップ）する。
+/// ロードは重く初回プレビューが数秒待たされるため、起動時にバックグラウンドで
+/// 呼んでおき、初回オープンも即座に表示できるようにする。
+pub(super) fn warm_highlight_cache() {
+    let _ = syntax_set();
+    let _ = theme_set();
+}
+
+/// syntectのデフォルト構文セットをプロセス内で一度だけロードして共有する。
+fn syntax_set() -> &'static syntect::parsing::SyntaxSet {
+    static SS: std::sync::OnceLock<syntect::parsing::SyntaxSet> = std::sync::OnceLock::new();
+    SS.get_or_init(syntect::parsing::SyntaxSet::load_defaults_nonewlines)
+}
+
+/// syntectのデフォルトテーマセットをプロセス内で一度だけロードして共有する。
+fn theme_set() -> &'static syntect::highlighting::ThemeSet {
+    static TS: std::sync::OnceLock<syntect::highlighting::ThemeSet> = std::sync::OnceLock::new();
+    TS.get_or_init(syntect::highlighting::ThemeSet::load_defaults)
+}
+
 /// syntectの色をratuiのRGBカラーに変換するヘルパー
 fn syntect_color_to_ratatui(color: syntect::highlighting::Color) -> Color {
     Color::Rgb(color.r, color.g, color.b)
@@ -109,7 +129,7 @@ pub struct FilePreview {
     pub path: PathBuf,
     /// ハイライト済みの行リスト
     pub lines: Vec<HighlightedLine>,
-    /// スクロール位置（先頭行のインデックス）
+    /// スクロール位置（先頭表示するソース行のインデックス）
     pub scroll: usize,
     /// テキストファイルかどうか
     pub is_text: bool,
@@ -179,11 +199,11 @@ impl FilePreview {
     /// @returns ハイライト済みの行リスト
     fn highlight_lines(path: &PathBuf, raw_lines: &[&str]) -> Vec<HighlightedLine> {
         use syntect::easy::HighlightLines;
-        use syntect::highlighting::ThemeSet;
-        use syntect::parsing::SyntaxSet;
 
-        let ss = SyntaxSet::load_defaults_nonewlines();
-        let ts = ThemeSet::load_defaults();
+        // syntectの構文・テーマセットはロードが重い（埋め込みデータの全展開）。
+        // プレビューを開くたびに再ロードすると数秒かかるため、プロセス内でキャッシュする。
+        let ss = syntax_set();
+        let ts = theme_set();
 
         // ダークテーマを選択
         let theme = match ts.themes.get("base16-ocean.dark") {
@@ -209,7 +229,7 @@ impl FilePreview {
         raw_lines
             .iter()
             .map(|line| {
-                match highlighter.highlight_line(line, &ss) {
+                match highlighter.highlight_line(line, ss) {
                     Ok(ranges) => {
                         let spans: Vec<(String, Style)> = ranges
                             .iter()

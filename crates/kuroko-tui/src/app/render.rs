@@ -542,16 +542,34 @@ impl App {
             .map(|n| n.to_string_lossy().to_string())
             .unwrap_or_else(|| preview.path.to_string_lossy().to_string());
 
+        // 枠線は描かない。端末のワイド文字表示幅（em dash等のEast Asian Ambiguous）と
+        // ratatuiのunicode-widthの不一致で本文行がずれ、枠がある限り右枠が構造的に乱れる
+        // ため。背景色を敷いたフローティングパネルとし、上端にファイル名、その下に本文を描く。
         let block = Block::default()
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(t.accent_primary))
-            .title(format!(" {} ", file_name))
+            .borders(Borders::NONE)
             .style(Style::default().bg(t.surface_overlay));
 
-        let inner = block.inner(preview_area);
-        // 下のペイン内容が透けないよう領域を消去してから描画する
+        // 下のペイン内容が透けないよう領域を消去してから背景を描く
         frame.render_widget(Clear, preview_area);
         frame.render_widget(block, preview_area);
+
+        // 上端1行にファイル名を表示
+        frame.render_widget(
+            Paragraph::new(Line::from(Span::styled(
+                format!(" {} ", file_name),
+                Style::default().fg(t.accent_primary).bg(t.surface_overlay),
+            ))),
+            Rect::new(preview_area.x, preview_area.y, preview_area.width, 1),
+        );
+
+        // 本文領域: 上端1行をタイトルに使い、左右に1桁の余白を取る。
+        // 右余白により、ワイド文字の幅ズレで本文が右へずれてもパネル内に収まりやすい。
+        let inner = Rect {
+            x: preview_area.x + 1,
+            y: preview_area.y + 1,
+            width: preview_area.width.saturating_sub(2),
+            height: preview_area.height.saturating_sub(1),
+        };
 
         if inner.height == 0 || inner.width == 0 {
             return;
@@ -565,46 +583,52 @@ impl App {
             0
         };
 
-        // スクロール位置の補正
-        let max_scroll = total_lines.saturating_sub(inner.height as usize);
+        // スクロール位置の補正（先頭表示するソース行のインデックス）
+        let max_scroll = total_lines.saturating_sub(1);
         let scroll = preview.scroll.min(max_scroll);
 
-        // 表示範囲の行を描画
-        for (i, highlighted_line) in preview
-            .lines
-            .iter()
-            .skip(scroll)
-            .take(inner.height as usize)
-            .enumerate()
-        {
-            let row = inner.y + i as u16;
-            if row >= inner.y + inner.height {
-                break;
+        // 行番号の固定幅プレフィックス（行番号 + 空白1）。本文はこの右側に折り返し描画する。
+        let prefix_width = if preview.is_text {
+            (line_num_width + 1) as u16
+        } else {
+            0
+        };
+        let content_x = inner.x + prefix_width;
+        let content_width = inner.width.saturating_sub(prefix_width);
+
+        // 表示範囲のソース行を、横に長い行は折り返して描画する。
+        // 1ソース行が複数の表示行に跨るため、行カーソルを折り返し行数ぶん進める。
+        // 行番号は折り返しブロックの先頭行にのみ表示する。
+        let end_row = inner.y + inner.height;
+        let mut row = inner.y;
+        let mut src_idx = scroll;
+        while row < end_row && src_idx < total_lines {
+            let highlighted_line = &preview.lines[src_idx];
+            let content_spans: Vec<Span> = highlighted_line
+                .spans
+                .iter()
+                .map(|(text, style)| Span::styled(text.clone(), *style))
+                .collect();
+            let para = Paragraph::new(Line::from(content_spans)).wrap(Wrap { trim: false });
+
+            // 折り返し後の表示行数を求め、残り領域内に収める
+            let wrapped_rows = (para.line_count(content_width).max(1) as u16).min(end_row - row);
+
+            if preview.is_text {
+                let line_num = src_idx + 1;
+                frame.render_widget(
+                    Paragraph::new(Line::from(Span::styled(
+                        format!("{:>width$} ", line_num, width = line_num_width),
+                        Style::default().fg(t.text_dim),
+                    ))),
+                    Rect::new(inner.x, row, prefix_width, 1),
+                );
             }
 
-            let line = if preview.is_text {
-                let line_num = scroll + i + 1;
-                // 行番号 + ハイライト済みスパンを結合
-                let mut spans = vec![Span::styled(
-                    format!("{:>width$} ", line_num, width = line_num_width),
-                    Style::default().fg(t.text_dim),
-                )];
-                for (text, style) in &highlighted_line.spans {
-                    spans.push(Span::styled(text.clone(), *style));
-                }
-                Line::from(spans)
-            } else {
-                // バイナリ/エラー表示: HighlightedLineのスパンをそのまま使う
-                let spans: Vec<Span> = highlighted_line
-                    .spans
-                    .iter()
-                    .map(|(text, style)| Span::styled(text.clone(), *style))
-                    .collect();
-                Line::from(spans)
-            };
+            frame.render_widget(para, Rect::new(content_x, row, content_width, wrapped_rows));
 
-            let line_area = Rect::new(inner.x, row, inner.width, 1);
-            frame.render_widget(Paragraph::new(line).wrap(Wrap { trim: false }), line_area);
+            row += wrapped_rows;
+            src_idx += 1;
         }
 
         // スクロールインジケーター

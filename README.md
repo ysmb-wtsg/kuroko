@@ -1,5 +1,7 @@
 # kuroko
 
+![kuroko screenshot](docs/images/screenshot.png)
+
 A terminal TUI application aiming to be the home base that replaces the editor in the AI agent era. The command name is `krk`.
 
 It keeps the customizability and extensibility of Neovim, while putting AI agent operation at the center.

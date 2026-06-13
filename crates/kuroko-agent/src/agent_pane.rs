@@ -192,6 +192,10 @@ impl Pane for AgentPane {
         PaneType::Agent
     }
 
+    fn cursor_position(&self, area: Rect) -> Option<(u16, u16)> {
+        self.inner.compute_cursor_position(area)
+    }
+
     fn process_output(&mut self, data: &[u8]) {
         self.inner.process_output(data);
     }

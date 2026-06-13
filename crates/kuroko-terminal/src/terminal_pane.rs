@@ -339,6 +339,32 @@ impl TerminalPane {
     ///
     /// @param frame - ratatuiの描画フレーム
     /// @param area - ターミナル内容を描画する領域
+    /// フォーカス時に表示すべき端末カーソルの絶対座標を計算する。
+    /// コピーモード中・スクロール中・カーソル非表示（DECTCEM）時はNoneを返す。
+    ///
+    /// @param area - 本体の描画領域（render_contentに渡すのと同じ領域）
+    /// @returns カーソルの絶対座標 (x, y)。表示不要ならNone
+    pub fn compute_cursor_position(&self, area: Rect) -> Option<(u16, u16)> {
+        // コピーモード中はブロックカーソルをウィジェット側で反転表示するため、
+        // また過去ログをスクロール表示中はカーソル位置が無意味なため表示しない
+        if self.copy_mode || self.scroll_offset > 0 {
+            return None;
+        }
+        let screen = self.parser.screen();
+        if screen.hide_cursor() {
+            return None;
+        }
+        let (row, col) = screen.cursor_position();
+        let x = area.x + col;
+        let y = area.y + row;
+        // 描画領域内に収まる場合のみ表示する
+        if x < area.right() && y < area.bottom() {
+            Some((x, y))
+        } else {
+            None
+        }
+    }
+
     pub fn render_content(&mut self, frame: &mut Frame, area: Rect) {
         // PTYスポーン失敗時はエラーメッセージを表示
         if let Some(ref err) = self.spawn_error {
@@ -489,6 +515,10 @@ impl Pane for TerminalPane {
 
     fn pane_type(&self) -> PaneType {
         PaneType::Terminal
+    }
+
+    fn cursor_position(&self, area: Rect) -> Option<(u16, u16)> {
+        self.compute_cursor_position(area)
     }
 
     fn process_output(&mut self, data: &[u8]) {

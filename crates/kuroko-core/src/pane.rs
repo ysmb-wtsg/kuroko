@@ -39,6 +39,16 @@ pub trait Pane: Send {
     /// このペインの種類を返す
     fn pane_type(&self) -> PaneType;
 
+    /// フォーカス時に端末カーソルを表示すべき絶対座標 (x, y) を返す。
+    /// PTYを持つペイン（ターミナル、エージェント）がオーバーライドする。
+    /// Noneを返すとカーソルを表示しない（デフォルト）。
+    ///
+    /// @param _area - このペインの本体描画領域
+    /// @returns カーソルの絶対座標。表示不要ならNone
+    fn cursor_position(&self, _area: Rect) -> Option<(u16, u16)> {
+        None
+    }
+
     /// PTYから受信したデータをパーサーに流し込む。
     /// PTYを持つペイン（ターミナル、エージェント）がオーバーライドする。
     ///

@@ -41,6 +41,9 @@ impl App {
                 .find(|(id, _)| *id == self.focused)
                 .map(|(_, rect)| *rect);
 
+            // フォーカス中ペインの本体領域（カーソル表示に使用）
+            let mut focused_body: Option<Rect> = None;
+
             for (pane_id, pane_area) in &pane_areas {
                 let show_tab_bar = (*pane_id == active_main
                     || (self.bottom_visible && Some(*pane_id) == active_bottom))
@@ -73,8 +76,14 @@ impl App {
                     if let Some(pane) = self.panes.get_mut(pane_id) {
                         pane.render(frame, pane_body, *pane_id == self.focused);
                     }
+                    if *pane_id == self.focused {
+                        focused_body = Some(pane_body);
+                    }
                 } else if let Some(pane) = self.panes.get_mut(pane_id) {
                     pane.render(frame, *pane_area, *pane_id == self.focused);
+                    if *pane_id == self.focused {
+                        focused_body = Some(*pane_area);
+                    }
                 }
             }
 
@@ -99,6 +108,24 @@ impl App {
             }
             if self.overlay.help_visible {
                 self.render_help(frame, area);
+            }
+
+            // フォーカス中ペインの端末カーソルを表示する。
+            // 直通状態でオーバーレイ・タブリネームが無いときのみ（グローバルレイヤー中は
+            // キーがペインに行かないため、誤解を避けてカーソルを出さない）。
+            let overlay_active = self.overlay.command_palette.is_some()
+                || self.overlay.file_preview.is_some()
+                || self.overlay.file_info.is_some()
+                || self.overlay.file_prompt.is_some()
+                || self.overlay.help_visible
+                || self.overlay.rename_input.is_some();
+            if !self.global_layer
+                && !overlay_active
+                && let Some(body) = focused_body
+                && let Some(pane) = self.panes.get(&self.focused)
+                && let Some(pos) = pane.cursor_position(body)
+            {
+                frame.set_cursor_position(pos);
             }
         })?;
 
@@ -399,6 +426,12 @@ impl App {
             ("Enter", "Copy mode (terminal/agent pane)"),
             (":", "Command palette"),
             ("q", "Quit"),
+            ("", "Agent / Terminal (direct input)"),
+            ("Enter", "Send / submit"),
+            (
+                "Ctrl+j",
+                "Insert a newline (Shift/Alt+Enter on supported terminals)",
+            ),
             ("", "File tree (focused, direct input)"),
             ("j/k", "Move cursor"),
             ("Enter/l/h", "Expand / collapse directory"),

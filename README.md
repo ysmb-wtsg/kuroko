@@ -107,7 +107,7 @@ end
 
 ## Status
 
-v0.1.0-alpha — basic pane management, agent integration, and Lua configuration are working.
+v0.2.0 — modeless input (global layer), pane management, agent integration, and Lua configuration are working.
 
 Planned:
 - Session persistence (tabs)

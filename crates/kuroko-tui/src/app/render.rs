@@ -12,7 +12,7 @@ use ratatui::widgets::{Block, Borders, Clear, Paragraph, Wrap};
 use kuroko_agent::{AgentPane, AgentStatus};
 use kuroko_core::layout::SplitDirection;
 use kuroko_core::theme;
-use kuroko_core::{FilePromptKind, Mode};
+use kuroko_core::{FilePromptKind, PaneType};
 
 use super::App;
 use super::overlay::MessageLevel;
@@ -283,20 +283,38 @@ impl App {
     }
 
     /// ステータスバーを描画する。
-    /// モード・フォーカス中ペイン名・エージェント状態・一時メッセージを集約表示する。
+    /// フォーカス中ペイン種別・グローバルレイヤー状態・エージェント状態・一時メッセージを集約表示する。
     fn render_status_bar(&self, frame: &mut ratatui::Frame, area: Rect) {
         let t = theme::get();
-        let mode_bg = match self.mode {
-            Mode::Normal => t.accent_primary,
-            Mode::Insert => t.accent_positive,
-            Mode::Select => t.accent_warning,
-        };
-        let mode_style = Style::default()
-            .fg(t.text_on_accent)
-            .bg(mode_bg)
-            .add_modifier(Modifier::BOLD);
 
-        let mut spans = vec![Span::styled(format!(" {} ", self.mode), mode_style)];
+        let mut spans = Vec::new();
+
+        // グローバルレイヤー中はバッジを先頭に表示する
+        if self.global_layer {
+            spans.push(Span::styled(
+                " GLOBAL ",
+                Style::default()
+                    .fg(t.text_on_accent)
+                    .bg(t.accent_warning)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+
+        // フォーカス中ペインの種別バッジ（旧モード表示の代替）。
+        // レイヤー状態のGLOBALバッジを目立たせるため、こちらは中立色のチップにする
+        let pane_label = match self.panes.get(&self.focused).map(|p| p.pane_type()) {
+            Some(PaneType::Agent) => "AGENT",
+            Some(PaneType::Terminal) => "TERM",
+            Some(PaneType::FileTree) => "FILES",
+            None => "-",
+        };
+        spans.push(Span::styled(
+            format!(" {pane_label} "),
+            Style::default()
+                .fg(t.text_primary)
+                .bg(t.surface_highlight)
+                .add_modifier(Modifier::BOLD),
+        ));
 
         // フォーカス中ペインのタイトル
         if let Some(pane) = self.panes.get(&self.focused) {
@@ -345,9 +363,9 @@ impl App {
             area,
         );
 
-        // 右端にヘルプコマンドのヒントを表示（Normalモード時のみ。
-        // Insert中は`:`がペインに送られるため誤誘導になる）
-        if self.mode == Mode::Normal {
+        // 右端にヘルプコマンドのヒントを表示（グローバルレイヤー中のみ。
+        // 直通中は`:`がペインに送られるため誤誘導になる）
+        if self.global_layer {
             frame.render_widget(
                 Paragraph::new(Span::styled(
                     " :help ",
@@ -366,11 +384,10 @@ impl App {
 
         // (キー, 説明) のリスト。空キーはセクション見出し
         let entries: &[(&str, &str)] = &[
-            ("", "Normal mode"),
-            ("i", "Insert mode (keys go to terminal/agent)"),
-            ("Esc", "Back to Normal mode"),
+            ("", "Global layer"),
+            ("C-Space", "Enter / leave global layer"),
+            ("Esc / i", "Back to direct input"),
             ("h/j/k/l", "Focus pane left/down/up/right"),
-            ("C-h/j/k/l", "Focus pane (works in any pane)"),
             ("Tab / S-Tab", "Focus next / previous pane"),
             ("H/J/K/L", "Resize pane"),
             ("t / f / g", "Toggle terminal / files / git panel"),
@@ -382,14 +399,14 @@ impl App {
             ("Enter", "Copy mode (terminal/agent pane)"),
             (":", "Command palette"),
             ("q", "Quit"),
-            ("", "File tree (focused, works in Normal mode)"),
+            ("", "File tree (focused, direct input)"),
             ("j/k", "Move cursor"),
             ("Enter/l/h", "Expand / collapse directory"),
             ("p / i", "Preview / file info"),
             ("a / r / d", "Create / rename / delete"),
             ("o", "Send file path to agent"),
             ("y / Y", "Copy name / full path"),
-            ("v", "Select mode (Space:toggle d:delete)"),
+            ("v", "Multi-select (Space:toggle d:delete)"),
             ("S-h", "Toggle hidden files"),
             ("", "Copy mode"),
             ("h/j/k/l", "Move cursor"),

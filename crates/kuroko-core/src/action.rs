@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use crate::types::{Direction, Mode, PaneId, SideContent};
+use crate::types::{Direction, PaneId, SideContent};
 
 /// ファイル操作プロンプトの種別。
 /// App側でプロンプト表示→ユーザー入力→FS操作の流れを制御する。
@@ -34,10 +34,6 @@ pub enum Action {
     FocusDirection(Direction),
     /// 指定ペインにフォーカスを移動する（マウスクリック等）
     FocusPane(PaneId),
-
-    // --- モード切替 ---
-    /// アプリケーションのモードを切り替える
-    SetMode(Mode),
 
     // --- サイドパネル ---
     /// サイドパネルの表示内容を切り替える（同じ内容なら閉じる）

@@ -11,7 +11,7 @@ The name comes from the kabuki *kuroko* (黒子) — the black-clad stagehand th
 - **AI agent integration**: Embed Claude Code, Codex, and custom agents via PTY
 - **Panel management**: Toggle and resize file tree, terminal, and git panels
 - **Tab system**: Agent tabs and terminal tabs managed independently
-- **Modal operation**: Normal / Insert / Select modes (Vim-like)
+- **Conflict-free input**: All keys go straight to the focused pane; pane management lives in a global layer behind `Ctrl+g`
 - **Lua customization**: Configure via `~/.config/krk/init.lua`
 - **Git panel**: Embed external tools such as lazygit / tig / gitui in the right panel
 - **File tree**: gitignore-aware, file operations (create / rename / delete), preview
@@ -42,16 +42,11 @@ The binary is generated at `target/release/krk`.
 krk
 ```
 
-On startup, the agent pane is shown in Insert mode.
+By default every key — including `Esc` and `Ctrl` combinations — goes straight to the focused pane, so tools running inside (vim, Claude Code, fzf, ...) behave exactly as they would in a plain terminal.
 
-### Switching modes
+Press `Ctrl+g` to enter the **global layer**, where single keystrokes manage panes. Press `Ctrl+g`, `Esc`, or `i` to go back to direct input. The status bar shows a `GLOBAL` badge while the layer is active.
 
-| Key | Action |
-|------|------|
-| `Esc` | Switch to Normal mode |
-| `i` | Back to Insert mode |
-
-### Normal mode keybindings
+### Global layer keybindings
 
 | Key | Action |
 |------|------|
@@ -61,9 +56,11 @@ On startup, the agent pane is shown in Insert mode.
 | `t` | Toggle terminal panel |
 | `f` | Toggle file tree panel |
 | `g` | Toggle git panel |
+| `Enter` | Copy mode (terminal / agent pane) |
+| `:` | Command palette |
 | `q` | Quit |
 
-### Tab operations (act on the focused panel)
+### Tab operations (global layer, act on the focused panel)
 
 | Key | Action |
 |------|------|
@@ -84,6 +81,19 @@ krk.pane.focus(direction)  -- Move focus ("next", "prev", "left", "right", "up",
 krk.opt.leader             -- Leader key
 krk.opt.main_pane          -- Main pane type ("claude-code", "codex", "terminal")
 krk.opt.git_tool           -- Git panel tool ("lazygit", "tig", "gitui", etc.)
+
+-- Keybindings
+-- context: "global" (inside the global layer) | "direct" (intercepted before the pane)
+krk.keymap.set(context, key, callback)
+krk.keymap.set_toggle_key(key)  -- Change the global layer toggle (default: "<C-g>")
+```
+
+Example — direct `Ctrl+h/j/k/l` focus movement (note: this steals those keys from apps inside panes):
+
+```lua
+for key, dir in pairs({ ["<C-h>"] = "left", ["<C-j>"] = "down", ["<C-k>"] = "up", ["<C-l>"] = "right" }) do
+  krk.keymap.set("direct", key, function() krk.pane.focus(dir) end)
+end
 ```
 
 ## Tech stack
@@ -98,10 +108,7 @@ krk.opt.git_tool           -- Git panel tool ("lazygit", "tig", "gitui", etc.)
 v0.1.0-alpha — basic pane management, agent integration, and Lua configuration are working.
 
 Planned:
-- Command palette
-- Custom keybindings (`krk.keymap.set`)
-- Terminal copy mode (scrollback)
-- Session persistence
+- Session persistence (tabs)
 - Theme customization
 
 ## License

@@ -14,4 +14,4 @@ pub use error::KurokoError;
 pub use event::AppEvent;
 pub use layout::LayoutNode;
 pub use pane::Pane;
-pub use types::{Direction, Mode, PaneId, PaneType, SideContent};
+pub use types::{Direction, PaneId, PaneType, SideContent};

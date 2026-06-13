@@ -4,5 +4,8 @@
 pub mod keymap;
 mod runtime;
 
-pub use keymap::{SharedKeymapRegistry, new_shared_registry, normalize_key_string};
+pub use keymap::{
+    DEFAULT_TOGGLE_KEY, KeymapContext, SharedKeymapRegistry, new_shared_registry,
+    normalize_key_string,
+};
 pub use runtime::LuaRuntime;

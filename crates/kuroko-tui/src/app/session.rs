@@ -53,6 +53,11 @@ fn session_path() -> PathBuf {
 /// セッション状態をファイルから読み込む。
 /// ファイルが存在しない場合やパースに失敗した場合はデフォルト値を返す。
 pub fn load() -> SessionState {
+    // ユニットテストでは実機の ~/.config/krk/session.json を読まない
+    // （開発機のセッション状態でApp::new()の初期状態が変わり、テストが不安定になるため）
+    if cfg!(test) {
+        return SessionState::default();
+    }
     let path = session_path();
     fs::read_to_string(&path)
         .ok()

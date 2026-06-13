@@ -1,5 +1,5 @@
 //! アプリケーションのメインループと状態管理。
-//! イベントの受信・ディスパッチ、モードに応じた入力ルーティング、描画を統括する。
+//! イベントの受信・ディスパッチ、直通/グローバルレイヤーの入力ルーティング、描画を統括する。
 
 mod file_ops;
 mod input;
@@ -17,16 +17,18 @@ use std::time::Duration;
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
     self, DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, KeyboardEnhancementFlags,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use ratatui::crossterm::execute;
+use ratatui::crossterm::terminal::supports_keyboard_enhancement;
 use ratatui::layout::Rect;
 
 use kuroko_agent::{AgentPane, BuiltinProvider};
 use kuroko_core::layout::SplitDirection;
-use kuroko_core::{Action, Direction, FilePromptKind, LayoutNode, Mode, Pane, PaneId, SideContent};
+use kuroko_core::{Action, Direction, FilePromptKind, LayoutNode, Pane, PaneId, SideContent};
 use kuroko_filetree::FileTreePane;
-use kuroko_lua::{LuaRuntime, SharedKeymapRegistry};
+use kuroko_lua::{DEFAULT_TOGGLE_KEY, KeymapContext, LuaRuntime, SharedKeymapRegistry};
 use kuroko_terminal::TerminalPane;
 use kuroko_terminal::pty_handle::PtyMessage;
 
@@ -42,8 +44,8 @@ pub struct App {
     layout: LayoutNode,
     /// 現在フォーカスされているペインのID
     focused: PaneId,
-    /// 現在の入力モード
-    mode: Mode,
+    /// グローバルレイヤー中かどうか（false = 全キーがフォーカス中ペインへ直通）
+    global_layer: bool,
     /// 次に発行するペインIDのカウンター
     next_pane_id: u64,
     /// PTY出力の受信チャネル
@@ -154,7 +156,7 @@ impl App {
             panes,
             layout: LayoutNode::Leaf(main_id),
             focused: main_id,
-            mode: Mode::Insert,
+            global_layer: false,
             next_pane_id: 1,
             pty_rx,
             pty_tx,
@@ -202,6 +204,17 @@ impl App {
         // マウスキャプチャとブラケットペーストモードを有効化
         execute!(io::stdout(), EnableMouseCapture, EnableBracketedPaste)?;
 
+        // kittyキーボードプロトコルを対応端末でのみ有効化する。
+        // これによりShift+Enter等の修飾付きキーがCSI uで届き、Enterと区別できる
+        // （legacy modeでは両者ともCRで届き判別不能）。
+        let kitty_enabled = supports_keyboard_enhancement().unwrap_or(false);
+        if kitty_enabled {
+            execute!(
+                io::stdout(),
+                PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES)
+            )?;
+        }
+
         loop {
             self.draw(terminal)?;
 
@@ -224,6 +237,11 @@ impl App {
                 let actions = self.handle_crossterm_event(ev);
                 self.dispatch_actions(actions);
             }
+        }
+
+        // 有効化していた場合のみkittyキーボードプロトコルを解除する
+        if kitty_enabled {
+            execute!(io::stdout(), PopKeyboardEnhancementFlags)?;
         }
 
         execute!(io::stdout(), DisableMouseCapture, DisableBracketedPaste)?;
@@ -333,11 +351,25 @@ impl App {
             return actions;
         }
 
-        match self.mode {
-            Mode::Insert => self.handle_insert_key(key),
-            Mode::Normal => self.handle_normal_key(key),
-            Mode::Select => self.handle_select_key(key),
+        if self.global_layer {
+            self.handle_global_key(key)
+        } else {
+            self.handle_direct_key(key)
         }
+    }
+
+    /// グローバルレイヤーのトグルキー（Vim記法）を返す。
+    /// Lua側で変更されていればその値、なければデフォルト値。
+    fn layer_toggle_key(&self) -> String {
+        self.keymap_registry
+            .as_ref()
+            .and_then(|r| r.lock().ok().map(|reg| reg.toggle_key().to_string()))
+            .unwrap_or_else(|| DEFAULT_TOGGLE_KEY.to_string())
+    }
+
+    /// キーイベントがグローバルレイヤーのトグルキーかどうかを判定する
+    pub(super) fn is_layer_toggle(&self, key: &KeyEvent) -> bool {
+        key_event_to_string(key).is_some_and(|s| s == self.layer_toggle_key())
     }
 
     /// Luaキーマップレジストリからマッチするキーバインドを探して実行する。
@@ -345,8 +377,13 @@ impl App {
     fn try_lua_keymap(&self, key: &KeyEvent) -> Option<Vec<Action>> {
         let registry = self.keymap_registry.as_ref()?;
         let key_str = key_event_to_string(key)?;
+        let context = if self.global_layer {
+            KeymapContext::Global
+        } else {
+            KeymapContext::Direct
+        };
         let reg = registry.lock().ok()?;
-        let entry = reg.get(self.mode, &key_str)?;
+        let entry = reg.get(context, &key_str)?;
 
         // コールバック実行（Luaコールバック内でkrk.pane.* 等が呼ばれ、
         // action_tx経由でActionが送信される）
@@ -370,9 +407,6 @@ impl App {
         match action {
             Action::Quit => {
                 self.should_quit = true;
-            }
-            Action::SetMode(mode) => {
-                self.mode = mode;
             }
             Action::PtyWrite { pane_id, data } => {
                 if let Some(pane) = self.panes.get_mut(&pane_id) {
@@ -854,10 +888,14 @@ fn key_to_bytes(key: &KeyEvent) -> Option<Vec<u8>> {
             }
         }
         KeyCode::Enter => {
-            if key.modifiers.contains(KeyModifiers::SHIFT) {
-                // Shift+Enter: kittyキーボードプロトコルのエスケープシーケンスを送信
-                // PTY内のアプリ（Claude Code等）が改行挿入として解釈する
-                Some(b"\x1b[13;2u".to_vec())
+            // Shift+Enter / Alt+Enter は改行挿入。LF(0x0A)を送る。
+            // 多くのCLIエージェント（Claude Code等）はCR=送信/確定、LF=改行挿入として扱うため、
+            // 送信先がkitty非対応でも改行として解釈される。
+            // なお修飾を検知するにはkittyキーボードプロトコルの有効化が前提（run()参照）。
+            if key.modifiers.contains(KeyModifiers::SHIFT)
+                || key.modifiers.contains(KeyModifiers::ALT)
+            {
+                Some(vec![b'\n'])
             } else {
                 Some(vec![b'\r'])
             }
@@ -882,6 +920,14 @@ fn key_to_bytes(key: &KeyEvent) -> Option<Vec<u8>> {
 /// 例: 'q' → "q", Ctrl+a → "<C-a>", Enter → "<CR>"
 fn key_event_to_string(key: &KeyEvent) -> Option<String> {
     match key.code {
+        // スペースは "<C- >" のような曖昧な表記を避けるため名前付きで表現する
+        KeyCode::Char(' ') => {
+            if key.modifiers.contains(KeyModifiers::CONTROL) {
+                Some("<C-Space>".to_string())
+            } else {
+                Some("<Space>".to_string())
+            }
+        }
         KeyCode::Char(c) => {
             if key.modifiers.contains(KeyModifiers::CONTROL) {
                 Some(format!("<C-{}>", c.to_ascii_lowercase()))

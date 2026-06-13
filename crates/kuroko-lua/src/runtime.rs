@@ -70,15 +70,16 @@ impl LuaRuntime {
     }
 
     /// krk.keymap モジュールを作成する。
-    /// `krk.keymap.set(mode, key, callback)` でカスタムキーバインドを登録できる。
+    /// `krk.keymap.set(context, key, callback)` でカスタムキーバインドを登録し、
+    /// `krk.keymap.set_toggle_key(key)` でグローバルレイヤーのトグルキーを変更できる。
     fn create_keymap_module(&self) -> mlua::Result<Table> {
         let keymap = self.lua.create_table()?;
         let registry = self.keymap_registry.clone();
 
-        // krk.keymap.set(mode, key, callback)
-        // Luaコールバックをキーマップレジストリに登録する
+        // krk.keymap.set(context, key, callback)
+        // context は "global"（グローバルレイヤー中） | "direct"（直通中の先取り）
         let set_fn = self.lua.create_function(
-            move |lua, (mode, key, callback): (String, String, Function)| {
+            move |lua, (context, key, callback): (String, String, Function)| {
                 // リーダーキーの展開: krk.opt.leader を取得
                 let leader = lua
                     .globals()
@@ -95,11 +96,25 @@ impl LuaRuntime {
 
                 // キーマップレジストリに登録
                 let mut reg = registry.lock().unwrap();
-                reg.set(&mode, normalized_key, registry_key);
+                if !reg.set(&context, normalized_key, registry_key) {
+                    return Err(mlua::Error::RuntimeError(format!(
+                        "Unknown keymap context: {context} (expected \"global\" or \"direct\")"
+                    )));
+                }
                 Ok(())
             },
         )?;
         keymap.set("set", set_fn)?;
+
+        // krk.keymap.set_toggle_key(key)
+        // グローバルレイヤーのトグルキーを変更する（デフォルト: <C-Space>）
+        let registry = self.keymap_registry.clone();
+        let set_toggle_fn = self.lua.create_function(move |_, key: String| {
+            let mut reg = registry.lock().unwrap();
+            reg.set_toggle_key(key);
+            Ok(())
+        })?;
+        keymap.set("set_toggle_key", set_toggle_fn)?;
 
         Ok(keymap)
     }
@@ -199,6 +214,7 @@ impl LuaRuntime {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::keymap::KeymapContext;
     use std::sync::mpsc;
 
     /// テスト用のLuaRuntimeとAction受信チャネルを生成するヘルパー
@@ -289,12 +305,35 @@ mod tests {
         let (runtime, _rx) = setup();
         let result = runtime
             .lua
-            .load(r#"krk.keymap.set("n", "q", function() end)"#)
+            .load(r#"krk.keymap.set("global", "q", function() end)"#)
             .exec();
         assert!(result.is_ok());
-        // レジストリにNormalモードの "q" が登録されていることを確認
+        // レジストリにグローバルコンテキストの "q" が登録されていることを確認
         let reg = runtime.keymap_registry.lock().unwrap();
-        assert!(reg.get(kuroko_core::Mode::Normal, "q").is_some());
+        assert!(reg.get(KeymapContext::Global, "q").is_some());
+    }
+
+    #[test]
+    fn keymap_set_registers_direct_binding() {
+        let (runtime, _rx) = setup();
+        runtime
+            .lua
+            .load(r#"krk.keymap.set("direct", "<C-h>", function() end)"#)
+            .exec()
+            .unwrap();
+        let reg = runtime.keymap_registry.lock().unwrap();
+        assert!(reg.get(KeymapContext::Direct, "<C-h>").is_some());
+        assert!(reg.get(KeymapContext::Global, "<C-h>").is_none());
+    }
+
+    #[test]
+    fn keymap_set_rejects_unknown_context() {
+        let (runtime, _rx) = setup();
+        let result = runtime
+            .lua
+            .load(r#"krk.keymap.set("n", "q", function() end)"#)
+            .exec();
+        assert!(result.is_err());
     }
 
     #[test]
@@ -304,13 +343,25 @@ mod tests {
         runtime.lua.load(r#"krk.opt.leader = ",""#).exec().unwrap();
         runtime
             .lua
-            .load(r#"krk.keymap.set("n", "<leader>f", function() end)"#)
+            .load(r#"krk.keymap.set("global", "<leader>f", function() end)"#)
             .exec()
             .unwrap();
         let reg = runtime.keymap_registry.lock().unwrap();
         // "<leader>f" が ",f" に展開されていることを確認
-        assert!(reg.get(kuroko_core::Mode::Normal, ",f").is_some());
-        assert!(reg.get(kuroko_core::Mode::Normal, "<leader>f").is_none());
+        assert!(reg.get(KeymapContext::Global, ",f").is_some());
+        assert!(reg.get(KeymapContext::Global, "<leader>f").is_none());
+    }
+
+    #[test]
+    fn keymap_set_toggle_key() {
+        let (runtime, _rx) = setup();
+        runtime
+            .lua
+            .load(r#"krk.keymap.set_toggle_key("<C-g>")"#)
+            .exec()
+            .unwrap();
+        let reg = runtime.keymap_registry.lock().unwrap();
+        assert_eq!(reg.toggle_key(), "<C-g>");
     }
 
     #[test]
@@ -318,13 +369,13 @@ mod tests {
         let (runtime, rx) = setup();
         runtime
             .lua
-            .load(r#"krk.keymap.set("n", "t", function() krk.pane.toggle("terminal") end)"#)
+            .load(r#"krk.keymap.set("global", "t", function() krk.pane.toggle("terminal") end)"#)
             .exec()
             .unwrap();
         // コールバックを実行する（レジストリのロックを解放してからexec_callbackを呼ぶ）
         {
             let reg = runtime.keymap_registry.lock().unwrap();
-            let entry = reg.get(kuroko_core::Mode::Normal, "t").unwrap();
+            let entry = reg.get(KeymapContext::Global, "t").unwrap();
             runtime.exec_callback(&entry.callback).unwrap();
         }
         let action = rx.try_recv().unwrap();

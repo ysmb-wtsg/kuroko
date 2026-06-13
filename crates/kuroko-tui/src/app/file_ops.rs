@@ -139,13 +139,4 @@ impl App {
                 .set_status_message_with_level(format!("Copy failed: {e}"), MessageLevel::Error),
         }
     }
-
-    /// FileTreeペインから選択中パスリストを取得するヘルパー
-    pub(super) fn get_filetree_selected_paths(&self) -> Vec<PathBuf> {
-        self.panes
-            .get(&self.focused)
-            .and_then(|p| p.as_any().downcast_ref::<FileTreePane>())
-            .map(|ft| ft.selected_paths())
-            .unwrap_or_default()
-    }
 }

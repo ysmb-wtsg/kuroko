@@ -3,7 +3,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-use kuroko_core::{Action, Mode, SideContent};
+use kuroko_core::{Action, SideContent};
 
 use super::App;
 use super::overlay::CommandPalette;
@@ -40,47 +40,81 @@ fn colon_key() -> KeyEvent {
     press_key(KeyCode::Char(':'))
 }
 
+/// グローバルレイヤーのトグルキー（Ctrl+g）イベントを生成する
+fn toggle_key() -> KeyEvent {
+    KeyEvent {
+        code: KeyCode::Char('g'),
+        modifiers: KeyModifiers::CONTROL,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    }
+}
+
 // ===========================================================================
-// 1. モード遷移
+// 1. グローバルレイヤーの出入り
 // ===========================================================================
 
 #[test]
-fn mode_starts_as_insert() {
+fn starts_in_direct_state() {
     let app = App::new();
-    assert_eq!(app.mode, Mode::Insert);
+    assert!(!app.global_layer);
 }
 
 #[test]
-fn esc_switches_to_normal_mode() {
+fn toggle_key_enters_global_layer() {
     let mut app = App::new();
-    let actions = app.handle_insert_key(esc_key());
+    let actions = app.handle_key(toggle_key());
     app.dispatch_actions(actions);
-    assert_eq!(app.mode, Mode::Normal);
+    assert!(app.global_layer);
 }
 
 #[test]
-fn i_switches_to_insert_mode() {
+fn toggle_key_exits_global_layer() {
     let mut app = App::new();
-    app.mode = Mode::Normal;
-    let actions = app.handle_normal_key(i_key());
+    app.global_layer = true;
+    let actions = app.handle_key(toggle_key());
     app.dispatch_actions(actions);
-    assert_eq!(app.mode, Mode::Insert);
+    assert!(!app.global_layer);
 }
 
 #[test]
-fn mode_round_trip_insert_normal_insert() {
+fn esc_exits_global_layer() {
     let mut app = App::new();
-    assert_eq!(app.mode, Mode::Insert);
-
-    // Insert -> Normal
-    let actions = app.handle_insert_key(esc_key());
+    app.global_layer = true;
+    let actions = app.handle_global_key(esc_key());
     app.dispatch_actions(actions);
-    assert_eq!(app.mode, Mode::Normal);
+    assert!(!app.global_layer);
+}
 
-    // Normal -> Insert
-    let actions = app.handle_normal_key(i_key());
+#[test]
+fn i_exits_global_layer() {
+    let mut app = App::new();
+    app.global_layer = true;
+    let actions = app.handle_global_key(i_key());
     app.dispatch_actions(actions);
-    assert_eq!(app.mode, Mode::Insert);
+    assert!(!app.global_layer);
+}
+
+#[test]
+fn esc_flows_to_pty_in_direct_state() {
+    let mut app = App::new();
+    // 直通状態のEscはレイヤー操作ではなくPTYへ転送される（vim/agent中断のため）
+    let actions = app.handle_direct_key(esc_key());
+    assert!(!app.global_layer);
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, Action::PtyWrite { data, .. } if data == &vec![0x1b_u8]))
+    );
+}
+
+#[test]
+fn q_flows_to_pane_in_direct_state() {
+    let mut app = App::new();
+    // 直通状態の q は終了ではなくペインへ転送される
+    let actions = app.handle_direct_key(press_key(KeyCode::Char('q')));
+    app.dispatch_actions(actions);
+    assert!(!app.should_quit);
 }
 
 // ===========================================================================
@@ -280,10 +314,10 @@ fn select_tab_out_of_range_is_noop() {
 // ===========================================================================
 
 #[test]
-fn colon_opens_command_palette() {
+fn colon_opens_command_palette_in_global_layer() {
     let mut app = App::new();
-    app.mode = Mode::Normal;
-    let actions = app.handle_normal_key(colon_key());
+    app.global_layer = true;
+    let actions = app.handle_global_key(colon_key());
     app.dispatch_actions(actions);
     assert!(app.overlay.command_palette.is_some());
 }
@@ -312,13 +346,13 @@ fn show_help_action_opens_and_esc_closes() {
 }
 
 #[test]
-fn filetree_receives_keys_directly_in_normal_mode() {
+fn filetree_receives_keys_directly_in_direct_state() {
     let mut app = App::new();
     app.dispatch_actions(vec![Action::ToggleFileTree]);
     let filetree_id = app.focused;
 
     // j はフォーカス移動ではなくペイン内カーソル移動として処理される
-    let actions = app.handle_normal_key(press_key(KeyCode::Char('j')));
+    let actions = app.handle_direct_key(press_key(KeyCode::Char('j')));
     assert!(
         actions
             .iter()
@@ -329,17 +363,13 @@ fn filetree_receives_keys_directly_in_normal_mode() {
 }
 
 #[test]
-fn ctrl_hjkl_moves_focus_from_filetree() {
+fn global_layer_moves_focus_from_filetree() {
     let mut app = App::new();
     app.dispatch_actions(vec![Action::ToggleFileTree]);
+    app.global_layer = true;
 
-    let key = KeyEvent {
-        code: KeyCode::Char('h'),
-        modifiers: KeyModifiers::CONTROL,
-        kind: KeyEventKind::Press,
-        state: KeyEventState::NONE,
-    };
-    let actions = app.handle_normal_key(key);
+    // レイヤー中の h はペイン種別に関わらずフォーカス移動になる
+    let actions = app.handle_global_key(press_key(KeyCode::Char('h')));
     assert!(
         actions
             .iter()
@@ -348,13 +378,39 @@ fn ctrl_hjkl_moves_focus_from_filetree() {
 }
 
 #[test]
-fn global_toggle_keys_work_from_filetree() {
+fn global_layer_resizes_with_filetree_focused() {
+    let mut app = App::new();
+    app.dispatch_actions(vec![Action::ToggleFileTree]);
+    app.global_layer = true;
+
+    // レイヤー中の H はfilerフォーカス中でもリサイズになる（旧Normalモードでは不可だった）
+    let actions = app.handle_global_key(press_key(KeyCode::Char('H')));
+    assert!(
+        actions
+            .iter()
+            .any(|a| matches!(a, Action::ResizePane { .. }))
+    );
+}
+
+#[test]
+fn panel_toggle_works_in_global_layer_from_filetree() {
+    let mut app = App::new();
+    app.dispatch_actions(vec![Action::ToggleFileTree]);
+    app.global_layer = true;
+
+    // レイヤー中の f はファイルツリーに渡らずパネルトグルとして処理される
+    let actions = app.handle_global_key(press_key(KeyCode::Char('f')));
+    assert!(actions.iter().any(|a| matches!(a, Action::ToggleFileTree)));
+}
+
+#[test]
+fn f_flows_to_filetree_in_direct_state() {
     let mut app = App::new();
     app.dispatch_actions(vec![Action::ToggleFileTree]);
 
-    // f はファイルツリーに渡らずグローバルのパネルトグルとして処理される
-    let actions = app.handle_normal_key(press_key(KeyCode::Char('f')));
-    assert!(actions.iter().any(|a| matches!(a, Action::ToggleFileTree)));
+    // 直通状態の f はグローバル操作ではなくペインへ渡る
+    let actions = app.handle_direct_key(press_key(KeyCode::Char('f')));
+    assert!(actions.iter().all(|a| !matches!(a, Action::ToggleFileTree)));
 }
 
 #[test]
@@ -367,9 +423,9 @@ fn q_closes_help() {
 }
 
 #[test]
-fn command_palette_blocks_normal_key_handling() {
+fn command_palette_blocks_global_key_handling() {
     let mut app = App::new();
-    app.mode = Mode::Normal;
+    app.global_layer = true;
     app.overlay.command_palette = Some(CommandPalette::new());
     let actions = app.handle_key(press_key(KeyCode::Char('q')));
     app.dispatch_actions(actions);
@@ -388,10 +444,10 @@ fn quit_action_sets_should_quit() {
 }
 
 #[test]
-fn q_key_in_normal_mode_quits() {
+fn q_key_in_global_layer_quits() {
     let mut app = App::new();
-    app.mode = Mode::Normal;
-    let actions = app.handle_normal_key(press_key(KeyCode::Char('q')));
+    app.global_layer = true;
+    let actions = app.handle_global_key(press_key(KeyCode::Char('q')));
     app.dispatch_actions(actions);
     assert!(app.should_quit);
 }
@@ -473,17 +529,18 @@ fn close_all_terminal_tabs_closes_bottom_panel() {
 }
 
 // ===========================================================================
-// 9. set_mode アクション
+// 9. コピーモードとレイヤーの連携
 // ===========================================================================
 
 #[test]
-fn set_mode_action_changes_mode() {
+fn enter_in_global_layer_starts_copy_mode_and_exits_layer() {
     let mut app = App::new();
-    assert_eq!(app.mode, Mode::Insert);
-    app.dispatch_action(Action::SetMode(Mode::Normal));
-    assert_eq!(app.mode, Mode::Normal);
-    app.dispatch_action(Action::SetMode(Mode::Insert));
-    assert_eq!(app.mode, Mode::Insert);
+    app.global_layer = true;
+    // メインペイン（エージェント）フォーカス中のEnterはコピーモード開始
+    let actions = app.handle_global_key(press_key(KeyCode::Enter));
+    assert!(actions.iter().any(|a| matches!(a, Action::EnterCopyMode)));
+    // コピーモードはペイン内部状態のためレイヤーは抜ける
+    assert!(!app.global_layer);
 }
 
 // ===========================================================================
@@ -493,9 +550,9 @@ fn set_mode_action_changes_mode() {
 #[test]
 fn redraw_action_is_noop() {
     let mut app = App::new();
-    let mode_before = app.mode;
+    let layer_before = app.global_layer;
     let focused_before = app.focused;
     app.dispatch_action(Action::Redraw);
-    assert_eq!(app.mode, mode_before);
+    assert_eq!(app.global_layer, layer_before);
     assert_eq!(app.focused, focused_before);
 }

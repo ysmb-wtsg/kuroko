@@ -12,7 +12,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{List, ListItem, ListState};
 
-use kuroko_core::{Action, AppEvent, FilePromptKind, Mode, Pane, PaneId, PaneType};
+use kuroko_core::{Action, AppEvent, FilePromptKind, Pane, PaneId, PaneType};
 
 use crate::icons::file_icon;
 use crate::tree::{FlatEntry, TreeEntry};
@@ -28,8 +28,10 @@ pub struct FileTreePane {
     list_state: ListState,
     /// 現在のカーソル位置（フラットリスト上のインデックス）
     selected: usize,
-    /// SELECTモードで選択されたアイテムのインデックス群
+    /// 複数選択モードで選択されたアイテムのインデックス群
     selected_items: HashSet<usize>,
+    /// 複数選択モード中かどうか（ペイン内部状態。グローバルなモードではない）
+    select_mode: bool,
     /// ツリーをフラット展開したキャッシュ。ツリー変更時に再構築する。
     flat_cache: Vec<FlatEntry>,
     /// 隠しファイルを表示するかどうか（デフォルト: false = 非表示）
@@ -55,6 +57,7 @@ impl FileTreePane {
             list_state,
             selected: 0,
             selected_items: HashSet::new(),
+            select_mode: false,
             flat_cache,
             show_hidden,
         }
@@ -140,8 +143,9 @@ impl FileTreePane {
             self.selected = self.flat_cache.len().saturating_sub(1);
         }
         self.list_state.select(Some(self.selected));
-        // リフレッシュ後はSELECTのインデックスが無効になるため解除
+        // リフレッシュ後は複数選択のインデックスが無効になるため解除
         self.selected_items.clear();
+        self.select_mode = false;
     }
 
     /// 選択済みアイテムがあるかどうかを返す
@@ -162,6 +166,58 @@ impl FileTreePane {
         }
         self.list_state.select(Some(self.selected));
         self.selected_items.clear();
+        self.select_mode = false;
+    }
+
+    /// 複数選択モード中かどうかを返す
+    pub fn is_select_mode(&self) -> bool {
+        self.select_mode
+    }
+
+    /// 複数選択モード中のキー処理。
+    /// Space で選択トグル、d で削除プロンプト、y/Y でコピー、v/Esc で解除。
+    fn handle_select_mode_key(&mut self, key: &ratatui::crossterm::event::KeyEvent) -> Vec<Action> {
+        use ratatui::crossterm::event::KeyCode;
+
+        match key.code {
+            KeyCode::Char('j') | KeyCode::Down => self.move_down(),
+            KeyCode::Char('k') | KeyCode::Up => self.move_up(),
+            KeyCode::Char(' ') => self.toggle_selection(),
+            KeyCode::Char('d') => {
+                let paths = self.selected_paths();
+                if !paths.is_empty() {
+                    return vec![Action::OpenFilePrompt(FilePromptKind::Delete { paths })];
+                }
+            }
+            KeyCode::Char('y') => {
+                let paths = self.selected_paths();
+                if !paths.is_empty() {
+                    let text: String = paths
+                        .iter()
+                        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    return vec![Action::CopyToClipboard(text)];
+                }
+            }
+            KeyCode::Char('Y') => {
+                let paths = self.selected_paths();
+                if !paths.is_empty() {
+                    let text: String = paths
+                        .iter()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    return vec![Action::CopyToClipboard(text)];
+                }
+            }
+            KeyCode::Char('v') | KeyCode::Esc => {
+                self.clear_selections();
+                self.select_mode = false;
+            }
+            _ => {}
+        }
+        vec![]
     }
 }
 
@@ -171,7 +227,11 @@ impl Pane for FileTreePane {
     }
 
     fn title(&self) -> &str {
-        "Files"
+        if self.select_mode {
+            "Files [SELECT]"
+        } else {
+            "Files"
+        }
     }
 
     fn render(&mut self, frame: &mut Frame, area: Rect, focused: bool) {
@@ -235,6 +295,10 @@ impl Pane for FileTreePane {
         if let AppEvent::Key(key) = event {
             if key.kind != KeyEventKind::Press {
                 return vec![];
+            }
+            // 複数選択モード中は専用のキー処理に委譲する
+            if self.select_mode {
+                return self.handle_select_mode_key(key);
             }
             match key.code {
                 KeyCode::Char('j') | KeyCode::Down => self.move_down(),
@@ -308,7 +372,8 @@ impl Pane for FileTreePane {
                     }
                 }
                 KeyCode::Char('v') => {
-                    return vec![Action::SetMode(Mode::Select)];
+                    // 複数選択モードに入る（ペイン内部状態）
+                    self.select_mode = true;
                 }
                 KeyCode::Char('H') => {
                     // 隠しファイルの表示/非表示をトグル

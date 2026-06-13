@@ -1,17 +1,16 @@
 //! App構造体のキーボード・マウス入力処理。
-//! モード別のキーハンドリング、マウスイベント処理、ペーストイベント処理を担当する。
+//! 直通/グローバルレイヤーのキーハンドリング、マウスイベント処理、ペーストイベント処理を担当する。
 
 use ratatui::crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind,
 };
 
 use kuroko_agent::AgentPane;
-use kuroko_core::{Action, AppEvent, Direction, FilePromptKind, Mode, PaneType};
-use kuroko_filetree::FileTreePane;
+use kuroko_core::{Action, AppEvent, Direction, FilePromptKind, PaneType};
 use kuroko_terminal::TerminalPane;
 
 use super::App;
-use super::overlay::{CommandPalette, FilePrompt};
+use super::overlay::CommandPalette;
 
 impl App {
     /// ペーストイベントを処理する。
@@ -250,89 +249,6 @@ impl App {
         vec![]
     }
 
-    /// SELECTモードのキー処理。
-    /// FileTreeペインにフォーカスがある場合のみ有効。
-    pub(super) fn handle_select_key(&mut self, key: KeyEvent) -> Vec<Action> {
-        if key.kind != KeyEventKind::Press {
-            return vec![];
-        }
-
-        // FileTree以外にフォーカスがある場合はInsertに戻す
-        let is_filetree = self
-            .panes
-            .get(&self.focused)
-            .map(|p| p.pane_type() == PaneType::FileTree)
-            .unwrap_or(false);
-        if !is_filetree {
-            return vec![Action::SetMode(Mode::Insert)];
-        }
-
-        match key.code {
-            KeyCode::Char('j') | KeyCode::Down => {
-                if let Some(pane) = self.panes.get_mut(&self.focused)
-                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>()
-                {
-                    ft.move_down();
-                }
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                if let Some(pane) = self.panes.get_mut(&self.focused)
-                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>()
-                {
-                    ft.move_up();
-                }
-            }
-            KeyCode::Char(' ') => {
-                if let Some(pane) = self.panes.get_mut(&self.focused)
-                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>()
-                {
-                    ft.toggle_selection();
-                }
-            }
-            KeyCode::Char('d') => {
-                let paths = self.get_filetree_selected_paths();
-                if !paths.is_empty() {
-                    self.overlay.file_prompt = Some(FilePrompt {
-                        kind: FilePromptKind::Delete { paths },
-                        input: String::new(),
-                    });
-                }
-            }
-            KeyCode::Char('y') => {
-                let paths = self.get_filetree_selected_paths();
-                if !paths.is_empty() {
-                    let text: String = paths
-                        .iter()
-                        .filter_map(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    self.copy_to_clipboard(&text);
-                }
-            }
-            KeyCode::Char('Y') => {
-                let paths = self.get_filetree_selected_paths();
-                if !paths.is_empty() {
-                    let text: String = paths
-                        .iter()
-                        .map(|p| p.to_string_lossy().to_string())
-                        .collect::<Vec<_>>()
-                        .join("\n");
-                    self.copy_to_clipboard(&text);
-                }
-            }
-            KeyCode::Char('v') | KeyCode::Esc => {
-                if let Some(pane) = self.panes.get_mut(&self.focused)
-                    && let Some(ft) = pane.as_any_mut().downcast_mut::<FileTreePane>()
-                {
-                    ft.clear_selections();
-                }
-                return vec![Action::SetMode(Mode::Insert)];
-            }
-            _ => {}
-        }
-        vec![]
-    }
-
     /// リネームモードのキー処理。
     /// `overlay.renaming_bottom_tab` に応じてメインタブまたはボトムタブのリネームを行う。
     pub(super) fn handle_rename_key(&mut self, key: KeyEvent) -> Vec<Action> {
@@ -368,12 +284,14 @@ impl App {
         }
     }
 
-    /// Insertモードのキー処理。
-    /// PTYペインにはバイト列を転送し、non-rawペイン（FileTree等）にはAppEventとして渡す。
-    pub(super) fn handle_insert_key(&mut self, key: KeyEvent) -> Vec<Action> {
-        // Esc でNormalモードに切り替え
-        if key.code == KeyCode::Esc {
-            return vec![Action::SetMode(Mode::Normal)];
+    /// 直通状態のキー処理。
+    /// トグルキーでグローバルレイヤーに入り、それ以外は全キー（Escを含む）を
+    /// フォーカス中ペインへ転送する。アプリはデフォルトでは一切キーを奪わない。
+    pub(super) fn handle_direct_key(&mut self, key: KeyEvent) -> Vec<Action> {
+        // トグルキーでグローバルレイヤーに入る
+        if key.kind == KeyEventKind::Press && self.is_layer_toggle(&key) {
+            self.global_layer = true;
+            return vec![];
         }
 
         // non-rawペイン（FileTree等）にはAppEventとして渡す
@@ -401,49 +319,17 @@ impl App {
         }
     }
 
-    /// Normalモードのキー処理。
-    /// 非rawペイン（FileTree等）にフォーカス中は、グローバル予約キー以外を
-    /// ペインに直接ルーティングする（Insertモードを経由しない）。
-    pub(super) fn handle_normal_key(&mut self, key: KeyEvent) -> Vec<Action> {
-        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-
-        // Ctrl+hjkl はペイン種別に関わらず常にフォーカス移動
-        if ctrl {
-            match key.code {
-                KeyCode::Char('h') => return vec![Action::FocusDirection(Direction::Left)],
-                KeyCode::Char('j') => return vec![Action::FocusDirection(Direction::Down)],
-                KeyCode::Char('k') => return vec![Action::FocusDirection(Direction::Up)],
-                KeyCode::Char('l') => return vec![Action::FocusDirection(Direction::Right)],
-                _ => {}
-            }
+    /// グローバルレイヤー中のキー処理。
+    /// ペイン種別に関わらず同一の単発キーでグローバル操作を行い、
+    /// キーはペインへ一切流さない。トグルキー・Esc・i で直通に戻る。
+    pub(super) fn handle_global_key(&mut self, key: KeyEvent) -> Vec<Action> {
+        if key.kind != KeyEventKind::Press {
+            return vec![];
         }
 
-        let wants_raw = self
-            .panes
-            .get(&self.focused)
-            .map(|p| p.wants_raw_input())
-            .unwrap_or(true);
-
-        if !wants_raw {
-            // グローバル予約キー（フォーカス移動・パネルトグル・パレット・終了）
-            match key.code {
-                KeyCode::Tab => return vec![Action::FocusNext],
-                KeyCode::BackTab => return vec![Action::FocusPrev],
-                KeyCode::Char('t') => return vec![Action::ToggleTerminal],
-                KeyCode::Char('f') => return vec![Action::ToggleFileTree],
-                KeyCode::Char('g') => return vec![Action::ToggleGitPanel],
-                KeyCode::Char(':') => {
-                    self.overlay.command_palette = Some(CommandPalette::new());
-                    return vec![];
-                }
-                KeyCode::Char('q') => return vec![Action::Quit],
-                _ => {}
-            }
-            // 予約キー以外はペインへ直接渡す
-            let event = AppEvent::Key(key);
-            if let Some(pane) = self.panes.get_mut(&self.focused) {
-                return pane.handle_event(&event);
-            }
+        // トグルキー・Esc・i で直通に戻る
+        if self.is_layer_toggle(&key) || matches!(key.code, KeyCode::Esc | KeyCode::Char('i')) {
+            self.global_layer = false;
             return vec![];
         }
 
@@ -451,9 +337,6 @@ impl App {
         let is_bottom_terminal = self.is_bottom_terminal_focused();
 
         match key.code {
-            // Insertモードに切り替え
-            KeyCode::Char('i') => vec![Action::SetMode(Mode::Insert)],
-
             // 方向フォーカス移動
             KeyCode::Char('h') => vec![Action::FocusDirection(Direction::Left)],
             KeyCode::Char('j') => vec![Action::FocusDirection(Direction::Down)],
@@ -523,7 +406,8 @@ impl App {
                 vec![]
             }
 
-            // コピーモード（ターミナル/エージェントペインにフォーカス中のみ）
+            // コピーモード（ターミナル/エージェントペインにフォーカス中のみ）。
+            // コピーモードはペイン内部状態のため、レイヤーは抜けてから入る
             KeyCode::Enter => {
                 let is_terminal_or_agent = self
                     .panes
@@ -531,6 +415,7 @@ impl App {
                     .map(|p| matches!(p.pane_type(), PaneType::Terminal | PaneType::Agent))
                     .unwrap_or(false);
                 if is_terminal_or_agent {
+                    self.global_layer = false;
                     vec![Action::EnterCopyMode]
                 } else {
                     vec![]

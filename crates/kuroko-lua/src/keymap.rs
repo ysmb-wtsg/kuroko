@@ -6,7 +6,18 @@ use std::sync::{Arc, Mutex};
 
 use mlua::RegistryKey;
 
-use kuroko_core::Mode;
+/// グローバルレイヤーのトグルキーのデフォルト値。
+/// 改行系（Enter / Ctrl+j）と無関係で全端末に確実に届き、エージェントの入力を奪わない
+/// （Ctrl+Spaceは端末によりNUL不達、Ctrl+jはエージェントの改行挿入と衝突するため不採用）。
+pub const DEFAULT_TOGGLE_KEY: &str = "<C-g>";
+
+/// キーマップの検索コンテキスト。
+/// Global = グローバルレイヤー中、Direct = 直通中（キーがペインへ流れる状態）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeymapContext {
+    Global,
+    Direct,
+}
 
 /// キーマップの登録エントリ。
 /// Luaコールバックへの参照を保持する。
@@ -15,13 +26,15 @@ pub struct KeymapEntry {
     pub callback: RegistryKey,
 }
 
-/// モードとキー文字列からキーマップエントリを引くレジストリ。
+/// コンテキストとキー文字列からキーマップエントリを引くレジストリ。
 /// Arc<Mutex<>> で LuaRuntime と App の間で共有する。
 pub struct KeymapRegistry {
-    /// Normal モードのキーバインド
-    normal: HashMap<String, KeymapEntry>,
-    /// Insert モードのキーバインド
-    insert: HashMap<String, KeymapEntry>,
+    /// グローバルレイヤー中のキーバインド
+    global: HashMap<String, KeymapEntry>,
+    /// 直通中にAppが先取りするキーバインド（デフォルト空＝衝突ゼロ）
+    direct: HashMap<String, KeymapEntry>,
+    /// グローバルレイヤーのトグルキー（Vim記法）
+    toggle_key: String,
 }
 
 impl Default for KeymapRegistry {
@@ -34,40 +47,53 @@ impl KeymapRegistry {
     /// 空のレジストリを生成する
     pub fn new() -> Self {
         Self {
-            normal: HashMap::new(),
-            insert: HashMap::new(),
+            global: HashMap::new(),
+            direct: HashMap::new(),
+            toggle_key: DEFAULT_TOGGLE_KEY.to_string(),
         }
     }
 
     /// キーバインドを登録する。
     ///
-    /// @param mode - モード文字列（"n" = Normal, "i" = Insert）
+    /// @param context - コンテキスト文字列（"global" | "direct"）
     /// @param key - キー文字列（例: "q", "<C-a>", "<leader>f"）
     /// @param callback - Lua関数のレジストリキー
-    pub fn set(&mut self, mode: &str, key: String, callback: RegistryKey) {
+    /// @returns 不明なコンテキストの場合は false
+    pub fn set(&mut self, context: &str, key: String, callback: RegistryKey) -> bool {
         let entry = KeymapEntry { callback };
-        match mode {
-            "n" => {
-                self.normal.insert(key, entry);
+        match context {
+            "global" => {
+                self.global.insert(key, entry);
+                true
             }
-            "i" => {
-                self.insert.insert(key, entry);
+            "direct" => {
+                self.direct.insert(key, entry);
+                true
             }
-            _ => {}
+            _ => false,
         }
     }
 
-    /// 指定モード・キーに対応するエントリを検索する。
+    /// 指定コンテキスト・キーに対応するエントリを検索する。
     ///
-    /// @param mode - 検索対象のモード
+    /// @param context - 検索対象のコンテキスト
     /// @param key - 検索対象のキー文字列
     /// @returns 登録済みならKeymapEntryの参照
-    pub fn get(&self, mode: Mode, key: &str) -> Option<&KeymapEntry> {
-        match mode {
-            Mode::Normal => self.normal.get(key),
-            Mode::Insert => self.insert.get(key),
-            Mode::Select => None,
+    pub fn get(&self, context: KeymapContext, key: &str) -> Option<&KeymapEntry> {
+        match context {
+            KeymapContext::Global => self.global.get(key),
+            KeymapContext::Direct => self.direct.get(key),
         }
+    }
+
+    /// グローバルレイヤーのトグルキーを返す
+    pub fn toggle_key(&self) -> &str {
+        &self.toggle_key
+    }
+
+    /// グローバルレイヤーのトグルキーを変更する
+    pub fn set_toggle_key(&mut self, key: String) {
+        self.toggle_key = key;
     }
 }
 
@@ -107,5 +133,18 @@ mod tests {
     fn normalize_plain_key() {
         assert_eq!(normalize_key_string("q", " "), "q");
         assert_eq!(normalize_key_string("<C-a>", " "), "<C-a>");
+    }
+
+    #[test]
+    fn default_toggle_key() {
+        let reg = KeymapRegistry::new();
+        assert_eq!(reg.toggle_key(), "<C-g>");
+    }
+
+    #[test]
+    fn set_toggle_key_overrides_default() {
+        let mut reg = KeymapRegistry::new();
+        reg.set_toggle_key("<C-g>".to_string());
+        assert_eq!(reg.toggle_key(), "<C-g>");
     }
 }

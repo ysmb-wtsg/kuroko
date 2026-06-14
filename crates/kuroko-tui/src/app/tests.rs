@@ -6,8 +6,8 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, 
 use kuroko_core::{Action, PaneId, PaneType, SideContent};
 
 use super::App;
-use super::overlay::MessageLevel;
 use super::overlay::CommandPalette;
+use super::overlay::MessageLevel;
 
 // ---------------------------------------------------------------------------
 // ヘルパー: KeyEvent生成

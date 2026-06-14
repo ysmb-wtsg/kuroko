@@ -32,7 +32,7 @@ use kuroko_lua::{DEFAULT_TOGGLE_KEY, KeymapContext, LuaRuntime, SharedKeymapRegi
 use kuroko_terminal::TerminalPane;
 use kuroko_terminal::pty_handle::PtyMessage;
 
-use overlay::{FileInfo, FilePreview, FilePrompt, MessageLevel, OverlayState};
+use overlay::{EditorOverlay, FileInfo, FilePreview, FilePrompt, MessageLevel, OverlayState};
 use tab_manager::TabManager;
 
 /// アプリケーションのメイン構造体。
@@ -82,6 +82,8 @@ pub struct App {
     git_panel_id: Option<PaneId>,
     /// Gitパネルで起動するツール名（lazygit, tig, gitui等）
     git_tool: String,
+    /// エディタ起動コマンド（設定 `krk.opt.editor`。未設定ならNoneで$EDITOR/vimにフォールバック）
+    editor_cmd: Option<String>,
 
     // --- ボトムターミナル ---
     /// ボトムターミナルの表示状態
@@ -126,6 +128,12 @@ impl App {
             .as_ref()
             .and_then(|lua| lua.get_opt_string("git_tool"))
             .unwrap_or_else(|| "lazygit".to_string());
+
+        // エディタ起動コマンド（設定があれば取得。なければNoneのまま$EDITOR/vimへフォールバック）
+        let editor_cmd = lua_runtime
+            .as_ref()
+            .and_then(|lua| lua.get_opt_string("editor"))
+            .filter(|s| !s.trim().is_empty());
 
         // メインペインの種類を設定から決定する（デフォルト: "claude-code"）
         let main_pane_setting = lua_runtime
@@ -173,6 +181,7 @@ impl App {
             file_tree_id: None,
             git_panel_id: None,
             git_tool,
+            editor_cmd,
             bottom_visible: false,
             bottom_ratio: saved_session.bottom_ratio,
             bottom_terminal_tabs: TabManager::new(),
@@ -274,6 +283,18 @@ impl App {
                     }
                 }
                 PtyMessage::Exited { pane_id } => {
+                    // エディタダイアログのPTYが終了したらダイアログを閉じ、一時ペインを破棄する。
+                    // （エディタを :q 等で終了 = ダイアログを閉じる、という自然な操作になる）
+                    if self
+                        .overlay
+                        .editor
+                        .as_ref()
+                        .is_some_and(|e| e.pane_id == pane_id)
+                    {
+                        self.overlay.editor = None;
+                        self.panes.remove(&pane_id);
+                        continue;
+                    }
                     // パネルスロット方式ではPTY終了時もペインを維持する。
                     // PTY終了フラグを立て、最終出力と終了表示を保持する。
                     if let Some(pane) = self.panes.get_mut(&pane_id) {
@@ -308,7 +329,11 @@ impl App {
 
     /// キー入力をモードに応じてルーティングする
     fn handle_key(&mut self, key: KeyEvent) -> Vec<Action> {
-        // オーバーレイの優先順位: help > command_palette > file_prompt > file_info > file_preview > rename_input
+        // オーバーレイの優先順位: editor > help > command_palette > file_prompt > file_info > file_preview > rename_input
+        // エディタダイアログは全キーをエディタPTYへ直通させるため最優先で処理する。
+        if self.overlay.editor.is_some() {
+            return self.handle_editor_key(key);
+        }
         if self.overlay.help_visible {
             return self.handle_help_key(key);
         }
@@ -508,6 +533,9 @@ impl App {
                     self.overlay.file_preview = Some(FilePreview::load(path));
                 }
             }
+            Action::OpenEditor(path) => {
+                self.open_editor(path);
+            }
             Action::OpenFilePrompt(kind) => {
                 let input = match &kind {
                     FilePromptKind::Rename { current_name, .. } => current_name.clone(),
@@ -561,6 +589,85 @@ impl App {
         self.main_tabs
             .active_id()
             .expect("invariant: main_tabs always has at least one tab")
+    }
+
+    /// エディタ起動コマンドを解決する。
+    /// 優先順位: 設定 `krk.opt.editor` → 環境変数 `$EDITOR` → `vim`。
+    /// 値は空白区切りでプログラムと引数に分割する（例: "nvim -u NONE"）。
+    ///
+    /// @returns (プログラム名, 追加引数のリスト)
+    fn resolve_editor(&self) -> (String, Vec<String>) {
+        let raw = self
+            .editor_cmd
+            .clone()
+            .or_else(|| std::env::var("EDITOR").ok())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "vim".to_string());
+        parse_editor_command(&raw)
+    }
+
+    /// エディタダイアログの矩形（画面中央、画面の約9割）を計算する。
+    /// open_editor（PTYサイズ算出）とrender_editor（描画）で同じ矩形を使う。
+    ///
+    /// @param area - 画面全体の領域
+    /// @returns ダイアログの外枠矩形
+    pub(super) fn editor_dialog_rect(area: Rect) -> Rect {
+        // 乗算オーバーフローを避けるためu32で計算する
+        let width = ((area.width as u32 * 9 / 10) as u16)
+            .max(20)
+            .min(area.width);
+        let height = ((area.height as u32 * 9 / 10) as u16)
+            .max(8)
+            .min(area.height);
+        let x = area.x + (area.width.saturating_sub(width)) / 2;
+        let y = area.y + (area.height.saturating_sub(height)) / 2;
+        Rect::new(x, y, width, height)
+    }
+
+    /// 指定ファイルを外部エディタで開き、フローティングダイアログとして表示する。
+    /// エディタは設定→$EDITOR→vimの順で解決し、PTY上で起動する。
+    /// PTYプロセスが終了するとダイアログは自動的に閉じる（drain_pty_messages参照）。
+    ///
+    /// @param path - 編集対象のファイルパス
+    fn open_editor(&mut self, path: PathBuf) {
+        // 多重起動を防ぐ（既にダイアログが開いていれば無視）
+        if self.overlay.editor.is_some() {
+            return;
+        }
+
+        let (program, extra_args) = self.resolve_editor();
+
+        // ダイアログ内側のサイズでPTYを起動する（外枠ボーダー分を引く）。
+        // 描画時にも同じ矩形を使い、サイズ差はrender_content側のリサイズで吸収される。
+        let dialog = Self::editor_dialog_rect(self.last_area);
+        let cols = dialog.width.saturating_sub(2).max(1);
+        let rows = dialog.height.saturating_sub(2).max(1);
+
+        let path_str = path.to_string_lossy().to_string();
+        let mut args: Vec<&str> = extra_args.iter().map(|s| s.as_str()).collect();
+        args.push(&path_str);
+
+        let id = self.alloc_pane_id();
+        let pane = TerminalPane::with_command(
+            id,
+            &program,
+            &args,
+            "Editor",
+            cols,
+            rows,
+            self.pty_tx.clone(),
+        );
+
+        if let Some(err) = pane.spawn_error() {
+            self.overlay.set_status_message_with_level(
+                format!("Failed to launch editor '{program}': {err}"),
+                MessageLevel::Error,
+            );
+            return;
+        }
+
+        self.panes.insert(id, Box::new(pane));
+        self.overlay.editor = Some(EditorOverlay { pane_id: id, path });
     }
 
     /// ペインIDを発行する
@@ -872,6 +979,18 @@ fn dirs_home() -> PathBuf {
     std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/"))
+}
+
+/// エディタ起動コマンド文字列をプログラム名と引数リストに分割する。
+/// 空白区切りで分割し、先頭をプログラム名、残りを引数とする（例: "nvim -u NONE"）。
+/// 空文字列や空白のみの場合は "vim" にフォールバックする。
+///
+/// @param raw - 解決済みのコマンド文字列
+/// @returns (プログラム名, 追加引数のリスト)
+fn parse_editor_command(raw: &str) -> (String, Vec<String>) {
+    let mut parts = raw.split_whitespace().map(|s| s.to_string());
+    let program = parts.next().unwrap_or_else(|| "vim".to_string());
+    (program, parts.collect())
 }
 
 /// KeyEventをPTYに送信するバイト列に変換する

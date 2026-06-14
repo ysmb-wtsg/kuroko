@@ -17,7 +17,7 @@ The command name is `krk`.
 
 kuroko unifies the **file tree**, **git**, and the **terminal** into one screen, with AI agents driving the workflow:
 
-- **File tree**: gitignore-aware navigation, file operations (create / rename / delete), and preview — always one keystroke away
+- **File tree**: gitignore-aware navigation, file operations (create / rename / delete), preview, and inline editing in your `$EDITOR` — always one keystroke away
 - **Git**: embed lazygit / tig / gitui in the right panel for staging, committing, and history without leaving the workspace
 - **Terminal**: full PTY-backed shells running side by side, so your tools (vim, fzf, ...) behave exactly as in a plain terminal
 - **AI agent integration**: embed Claude Code, Codex, and custom agents via PTY, right next to your files and git

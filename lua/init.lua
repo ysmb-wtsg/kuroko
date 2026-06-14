@@ -7,6 +7,10 @@ krk.opt.leader = " "
 -- Main pane ("claude-code", "codex", "terminal")
 -- krk.opt.main_pane = "claude-code"
 
+-- Editor for the file tree "e" key (opens in a floating dialog).
+-- Falls back to $EDITOR, then "vim", when unset. Args are allowed (e.g. "nvim -u NONE").
+-- krk.opt.editor = "vim"
+
 -- Global layer toggle key (default: Ctrl+g)
 -- krk.keymap.set_toggle_key("<C-g>")
 

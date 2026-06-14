@@ -101,6 +101,9 @@ impl App {
             if self.overlay.file_preview.is_some() {
                 self.render_file_preview(frame, area);
             }
+            if self.overlay.editor.is_some() {
+                self.render_editor(frame, area);
+            }
             if self.overlay.file_info.is_some() {
                 self.render_file_info(frame, area);
             }
@@ -116,6 +119,7 @@ impl App {
             // キーがペインに行かないため、誤解を避けてカーソルを出さない）。
             let overlay_active = self.overlay.command_palette.is_some()
                 || self.overlay.file_preview.is_some()
+                || self.overlay.editor.is_some()
                 || self.overlay.file_info.is_some()
                 || self.overlay.file_prompt.is_some()
                 || self.overlay.help_visible
@@ -455,7 +459,8 @@ impl App {
             ("", "File tree (focused, direct input)"),
             ("j/k", "Move cursor"),
             ("Enter/l/h", "Expand / collapse directory"),
-            ("p / i", "Preview / file info"),
+            ("p / e", "Preview / edit (external editor)"),
+            ("i", "File info"),
             ("a / r / d", "Create / rename / delete"),
             ("o", "Send file path to agent"),
             ("y / Y", "Copy name / full path"),
@@ -649,6 +654,53 @@ impl App {
                 )),
                 info_area,
             );
+        }
+    }
+
+    /// エディタダイアログをフローティングウィンドウとして描画する。
+    /// 中央に枠付きダイアログを置き、その内側に外部エディタを動かすPTYの画面を描画する。
+    /// 端末カーソルもエディタ画面の位置に合わせて表示する。
+    ///
+    /// @param frame - 描画フレーム
+    /// @param area - 画面全体の領域
+    fn render_editor(&mut self, frame: &mut ratatui::Frame, area: Rect) {
+        let t = theme::get();
+        let (pane_id, path) = match &self.overlay.editor {
+            Some(e) => (e.pane_id, e.path.clone()),
+            None => return,
+        };
+
+        let dialog = Self::editor_dialog_rect(area);
+        let title = format!(
+            " Editor: {} ",
+            path.file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| path.to_string_lossy().to_string())
+        );
+
+        // 背景をクリアしてから枠を描画する
+        frame.render_widget(Clear, dialog);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(t.border_focus))
+            .title(Span::styled(
+                title,
+                Style::default()
+                    .fg(t.text_body)
+                    .add_modifier(Modifier::BOLD),
+            ));
+        let inner = block.inner(dialog);
+        frame.render_widget(block, dialog);
+
+        // 枠の内側にエディタPTYの画面を描画する（リサイズはrender_content側で吸収）
+        if let Some(pane) = self.panes.get_mut(&pane_id) {
+            pane.render(frame, inner, true);
+        }
+        // エディタのカーソル位置を端末カーソルとして表示する
+        if let Some(pane) = self.panes.get(&pane_id)
+            && let Some(pos) = pane.cursor_position(inner)
+        {
+            frame.set_cursor_position(pos);
         }
     }
 

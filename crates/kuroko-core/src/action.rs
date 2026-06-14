@@ -81,6 +81,10 @@ pub enum Action {
     /// ファイルプレビューの表示/非表示をトグルする
     ToggleFilePreview(PathBuf),
 
+    // --- ファイル編集 ---
+    /// 指定ファイルを外部エディタ（フローティングダイアログ内のPTY）で開く
+    OpenEditor(PathBuf),
+
     // --- ファイル操作 ---
     /// ファイル操作プロンプトを表示する
     OpenFilePrompt(FilePromptKind),

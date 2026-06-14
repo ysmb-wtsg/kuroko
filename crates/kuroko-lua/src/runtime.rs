@@ -63,6 +63,7 @@ impl LuaRuntime {
         opt.set("leader", " ")?;
         opt.set("tick_rate", 50)?;
         opt.set("main_pane", "claude-code")?;
+        // editor は既定値を設定しない（未設定時は $EDITOR → vim にフォールバックさせるため）
         krk.set("opt", opt)?;
 
         globals.set("krk", krk)?;

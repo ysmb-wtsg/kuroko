@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use ratatui::style::{Color, Style};
 
 use kuroko_core::theme;
-use kuroko_core::{Action, FilePromptKind};
+use kuroko_core::{Action, FilePromptKind, PaneId};
 
 /// プレビュー表示の最大読み込み行数
 pub const PREVIEW_MAX_LINES: usize = 500;
@@ -19,6 +19,8 @@ pub struct OverlayState {
     pub command_palette: Option<CommandPalette>,
     /// ファイルプレビューの状態（Noneならプレビュー非表示）
     pub file_preview: Option<FilePreview>,
+    /// エディタダイアログの状態（Noneなら非表示）
+    pub editor: Option<EditorOverlay>,
     /// ファイル操作プロンプトの状態（Noneならプロンプト非表示）
     pub file_prompt: Option<FilePrompt>,
     /// ファイル詳細情報の状態（Noneなら非表示）
@@ -39,6 +41,7 @@ impl OverlayState {
         Self {
             command_palette: None,
             file_preview: None,
+            editor: None,
             file_prompt: None,
             file_info: None,
             status_message: None,
@@ -274,6 +277,16 @@ impl FilePreview {
             })
             .collect()
     }
+}
+
+/// エディタダイアログの状態を管理する構造体。
+/// 実体のPTY（外部エディタプロセス）は `App::panes` に `pane_id` で登録された
+/// `TerminalPane` が保持し、ここではダイアログとして開いている対象の参照のみを持つ。
+pub struct EditorOverlay {
+    /// エディタを実行しているTerminalPaneのID（App::panes内）
+    pub pane_id: PaneId,
+    /// 編集対象のファイルパス（タイトル表示用）
+    pub path: PathBuf,
 }
 
 /// ファイル操作プロンプトの状態を管理する構造体

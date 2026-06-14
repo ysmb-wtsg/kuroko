@@ -595,3 +595,46 @@ fn backtab_sends_csi_z() {
         Some(b"\x1b[Z".to_vec())
     );
 }
+
+// ---------------------------------------------------------------------------
+// エディタダイアログ
+// ---------------------------------------------------------------------------
+
+#[test]
+fn parse_editor_command_program_only() {
+    // 引数なしのコマンドはプログラム名のみ、引数は空になる
+    let (program, args) = super::parse_editor_command("vim");
+    assert_eq!(program, "vim");
+    assert!(args.is_empty());
+}
+
+#[test]
+fn parse_editor_command_with_args() {
+    // 空白区切りで先頭がプログラム名、残りが引数になる
+    let (program, args) = super::parse_editor_command("nvim -u NONE");
+    assert_eq!(program, "nvim");
+    assert_eq!(args, vec!["-u".to_string(), "NONE".to_string()]);
+}
+
+#[test]
+fn parse_editor_command_empty_falls_back_to_vim() {
+    // 空文字列はvimにフォールバックする
+    let (program, args) = super::parse_editor_command("");
+    assert_eq!(program, "vim");
+    assert!(args.is_empty());
+}
+
+#[test]
+fn editor_dialog_rect_is_centered_and_within_area() {
+    use ratatui::layout::Rect;
+    let area = Rect::new(0, 0, 100, 40);
+    let dialog = super::App::editor_dialog_rect(area);
+    // 画面の約9割サイズで、画面内に収まる
+    assert_eq!(dialog.width, 90);
+    assert_eq!(dialog.height, 36);
+    assert!(dialog.right() <= area.right());
+    assert!(dialog.bottom() <= area.bottom());
+    // 中央配置（左右・上下の余白が均等）
+    assert_eq!(dialog.x, (area.width - dialog.width) / 2);
+    assert_eq!(dialog.y, (area.height - dialog.height) / 2);
+}

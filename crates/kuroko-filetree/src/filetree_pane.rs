@@ -330,6 +330,11 @@ impl Pane for FileTreePane {
                         return vec![Action::ToggleFilePreview(path)];
                     }
                 }
+                KeyCode::Char('e') => {
+                    if let Some(path) = self.selected_path() {
+                        return vec![Action::OpenEditor(path)];
+                    }
+                }
                 KeyCode::Char('a') => {
                     if let Some(parent_dir) = self.parent_dir_of_selected() {
                         return vec![Action::OpenFilePrompt(FilePromptKind::Create {

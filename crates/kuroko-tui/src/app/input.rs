@@ -178,6 +178,25 @@ impl App {
         vec![]
     }
 
+    /// エディタダイアログ表示中のキー処理。
+    /// ダイアログはエディタ（vim等）が全入力を所有するため、アプリはキーを一切奪わず
+    /// 全キーをエディタのPTYへ直通させる。ダイアログはエディタプロセスの終了で閉じる
+    /// （例: vimの `:q`）。終了処理は drain_pty_messages 側で行う。
+    pub(super) fn handle_editor_key(&mut self, key: KeyEvent) -> Vec<Action> {
+        if key.kind != KeyEventKind::Press {
+            return vec![];
+        }
+        let Some(editor) = self.overlay.editor.as_ref() else {
+            return vec![];
+        };
+        let pane_id = editor.pane_id;
+        if let Some(data) = super::key_to_bytes(&key) {
+            vec![Action::PtyWrite { pane_id, data }]
+        } else {
+            vec![]
+        }
+    }
+
     /// ファイル操作プロンプト表示中のキー処理。
     /// Enter で操作実行、Esc でキャンセル。
     pub(super) fn handle_file_prompt_key(&mut self, key: KeyEvent) -> Vec<Action> {

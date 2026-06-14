@@ -11,6 +11,12 @@ krk.opt.leader = " "
 -- Falls back to $EDITOR, then "vim", when unset. Args are allowed (e.g. "nvim -u NONE").
 -- krk.opt.editor = "vim"
 
+-- File manager for the side panel. Uses the built-in tree when unset or "builtin".
+-- Set to an external TUI file manager (e.g. "yazi", "lf"). Args are allowed.
+-- Note: replacing the built-in tree disables kuroko-specific keys
+-- (send-to-agent, preview, in-app editor); the external tool handles its own keys.
+-- krk.opt.file_manager = "yazi"
+
 -- Global layer toggle key (default: Ctrl+g)
 -- krk.keymap.set_toggle_key("<C-g>")
 

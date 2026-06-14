@@ -3,9 +3,10 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-use kuroko_core::{Action, SideContent};
+use kuroko_core::{Action, PaneId, PaneType, SideContent};
 
 use super::App;
+use super::overlay::MessageLevel;
 use super::overlay::CommandPalette;
 
 // ---------------------------------------------------------------------------
@@ -156,6 +157,35 @@ fn toggle_file_tree_does_not_create_duplicate_pane() {
     app.dispatch_action(Action::ToggleSide(SideContent::FileTree));
     app.dispatch_action(Action::ToggleSide(SideContent::FileTree));
     assert_eq!(app.file_tree_id, first_id);
+}
+
+#[test]
+fn file_manager_unset_builds_builtin_tree() {
+    // file_manager未設定なら内蔵ファイルツリーを生成する
+    let mut app = App::new();
+    app.file_manager = None;
+    let pane = app.build_file_tree_pane(PaneId(99));
+    assert_eq!(pane.pane_type(), PaneType::FileTree);
+}
+
+#[test]
+fn file_manager_existing_command_builds_terminal() {
+    // 存在する外部コマンド指定時はPTYで起動するターミナルペインになる
+    let mut app = App::new();
+    app.file_manager = Some("sh".to_string());
+    let pane = app.build_file_tree_pane(PaneId(99));
+    assert_eq!(pane.pane_type(), PaneType::Terminal);
+}
+
+#[test]
+fn file_manager_missing_command_warns_and_falls_back() {
+    // 存在しないコマンド指定時は警告を出して内蔵ツリーにフォールバックする
+    let mut app = App::new();
+    app.file_manager = Some("krk-no-such-file-manager".to_string());
+    let pane = app.build_file_tree_pane(PaneId(99));
+    assert_eq!(pane.pane_type(), PaneType::FileTree);
+    let msg = app.overlay.status_message.expect("warn message expected");
+    assert_eq!(msg.level, MessageLevel::Warn);
 }
 
 #[test]
@@ -601,26 +631,26 @@ fn backtab_sends_csi_z() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn parse_editor_command_program_only() {
+fn parse_command_program_only() {
     // 引数なしのコマンドはプログラム名のみ、引数は空になる
-    let (program, args) = super::parse_editor_command("vim");
+    let (program, args) = super::parse_command("vim");
     assert_eq!(program, "vim");
     assert!(args.is_empty());
 }
 
 #[test]
-fn parse_editor_command_with_args() {
+fn parse_command_with_args() {
     // 空白区切りで先頭がプログラム名、残りが引数になる
-    let (program, args) = super::parse_editor_command("nvim -u NONE");
+    let (program, args) = super::parse_command("nvim -u NONE");
     assert_eq!(program, "nvim");
     assert_eq!(args, vec!["-u".to_string(), "NONE".to_string()]);
 }
 
 #[test]
-fn parse_editor_command_empty_falls_back_to_vim() {
-    // 空文字列はvimにフォールバックする
-    let (program, args) = super::parse_editor_command("");
-    assert_eq!(program, "vim");
+fn parse_command_empty_yields_empty_program() {
+    // 空文字列はプログラム名が空になる（呼び出し側が非空を保証する前提）
+    let (program, args) = super::parse_command("");
+    assert!(program.is_empty());
     assert!(args.is_empty());
 }
 

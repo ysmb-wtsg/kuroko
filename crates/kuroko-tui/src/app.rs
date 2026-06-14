@@ -84,6 +84,8 @@ pub struct App {
     git_tool: String,
     /// エディタ起動コマンド（設定 `krk.opt.editor`。未設定ならNoneで$EDITOR/vimにフォールバック）
     editor_cmd: Option<String>,
+    /// 外部ファイラ起動コマンド（設定 `krk.opt.file_manager`。未設定/"builtin"ならNoneで内蔵ツリーを使う）
+    file_manager: Option<String>,
 
     // --- ボトムターミナル ---
     /// ボトムターミナルの表示状態
@@ -135,6 +137,12 @@ impl App {
             .and_then(|lua| lua.get_opt_string("editor"))
             .filter(|s| !s.trim().is_empty());
 
+        // 外部ファイラ起動コマンド（設定があり "builtin" 以外なら取得。なければNoneで内蔵ツリーを使う）
+        let file_manager = lua_runtime
+            .as_ref()
+            .and_then(|lua| lua.get_opt_string("file_manager"))
+            .filter(|s| !s.trim().is_empty() && s != "builtin");
+
         // メインペインの種類を設定から決定する（デフォルト: "claude-code"）
         let main_pane_setting = lua_runtime
             .as_ref()
@@ -182,6 +190,7 @@ impl App {
             git_panel_id: None,
             git_tool,
             editor_cmd,
+            file_manager,
             bottom_visible: false,
             bottom_ratio: saved_session.bottom_ratio,
             bottom_terminal_tabs: TabManager::new(),
@@ -603,7 +612,7 @@ impl App {
             .or_else(|| std::env::var("EDITOR").ok())
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "vim".to_string());
-        parse_editor_command(&raw)
+        parse_command(&raw)
     }
 
     /// エディタダイアログの矩形（画面中央、画面の約9割）を計算する。
@@ -720,6 +729,36 @@ impl App {
         self.rebuild_layout();
     }
 
+    /// ファイルツリーペインを生成する。
+    /// `krk.opt.file_manager` が設定されていればその外部ファイラをPTYで起動し、
+    /// コマンドが見つからない場合は警告を出して内蔵ツリーにフォールバックする。
+    ///
+    /// @param new_id - 生成するペインに割り当てるID
+    /// @returns 生成したペイン（外部ファイラまたは内蔵ツリー）
+    fn build_file_tree_pane(&mut self, new_id: PaneId) -> Box<dyn Pane> {
+        if let Some(ref raw) = self.file_manager {
+            let (program, args) = parse_command(raw);
+            if which::which(&program).is_ok() {
+                let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                return Box::new(TerminalPane::with_command(
+                    new_id,
+                    &program,
+                    &arg_refs,
+                    "Files",
+                    80,
+                    24,
+                    self.pty_tx.clone(),
+                ));
+            }
+            self.overlay.set_status_message_with_level(
+                format!("{program} not found. Using built-in file tree (set krk.opt.file_manager)"),
+                MessageLevel::Warn,
+            );
+        }
+        let path = std::env::current_dir().unwrap_or_else(|_| "/".into());
+        Box::new(FileTreePane::new(new_id, path))
+    }
+
     /// サイドパネルの遅延初期化。初回アクセス時のみペインを生成する。
     /// Gitツールが見つからない場合はfalseを返す。
     ///
@@ -730,9 +769,8 @@ impl App {
             SideContent::FileTree => {
                 if self.file_tree_id.is_none() {
                     let new_id = self.alloc_pane_id();
-                    let path = std::env::current_dir().unwrap_or_else(|_| "/".into());
-                    let pane = FileTreePane::new(new_id, path);
-                    self.panes.insert(new_id, Box::new(pane));
+                    let pane = self.build_file_tree_pane(new_id);
+                    self.panes.insert(new_id, pane);
                     self.file_tree_id = Some(new_id);
                 }
                 true
@@ -981,15 +1019,16 @@ fn dirs_home() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("/"))
 }
 
-/// エディタ起動コマンド文字列をプログラム名と引数リストに分割する。
+/// コマンド文字列をプログラム名と引数リストに分割する。
 /// 空白区切りで分割し、先頭をプログラム名、残りを引数とする（例: "nvim -u NONE"）。
-/// 空文字列や空白のみの場合は "vim" にフォールバックする。
+/// エディタ・外部ファイラなど外部コマンドの起動で共通利用する。呼び出し側で
+/// 非空を保証するため、空文字列の場合はプログラム名が空のまま返る。
 ///
 /// @param raw - 解決済みのコマンド文字列
 /// @returns (プログラム名, 追加引数のリスト)
-fn parse_editor_command(raw: &str) -> (String, Vec<String>) {
+fn parse_command(raw: &str) -> (String, Vec<String>) {
     let mut parts = raw.split_whitespace().map(|s| s.to_string());
-    let program = parts.next().unwrap_or_else(|| "vim".to_string());
+    let program = parts.next().unwrap_or_default();
     (program, parts.collect())
 }
 

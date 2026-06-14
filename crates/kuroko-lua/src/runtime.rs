@@ -64,6 +64,7 @@ impl LuaRuntime {
         opt.set("tick_rate", 50)?;
         opt.set("main_pane", "claude-code")?;
         // editor は既定値を設定しない（未設定時は $EDITOR → vim にフォールバックさせるため）
+        // file_manager も既定値を設定しない（未設定/"builtin"時は内蔵ファイルツリーを使うため）
         krk.set("opt", opt)?;
 
         globals.set("krk", krk)?;
@@ -108,7 +109,7 @@ impl LuaRuntime {
         keymap.set("set", set_fn)?;
 
         // krk.keymap.set_toggle_key(key)
-        // グローバルレイヤーのトグルキーを変更する（デフォルト: <C-Space>）
+        // グローバルレイヤーのトグルキーを変更する（デフォルト: <C-g>）
         let registry = self.keymap_registry.clone();
         let set_toggle_fn = self.lua.create_function(move |_, key: String| {
             let mut reg = registry.lock().unwrap();

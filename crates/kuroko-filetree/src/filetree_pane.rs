@@ -148,6 +148,13 @@ impl FileTreePane {
         self.select_mode = false;
     }
 
+    /// ツリー全体をディスクから再読み込みする。展開状態は維持する。
+    /// 外部ツールによるファイル変更を反映する手動リロード用。
+    pub fn reload(&mut self) {
+        let root_path = self.root.path.clone();
+        self.refresh(&root_path);
+    }
+
     /// 選択済みアイテムがあるかどうかを返す
     pub fn has_selections(&self) -> bool {
         !self.selected_items.is_empty()
@@ -378,6 +385,10 @@ impl Pane for FileTreePane {
                 KeyCode::Char('H') => {
                     // 隠しファイルの表示/非表示をトグル
                     self.toggle_hidden();
+                }
+                KeyCode::Char('R') => {
+                    // ツリー全体をディスクから再読み込み
+                    self.reload();
                 }
                 _ => {}
             }

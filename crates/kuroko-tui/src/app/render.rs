@@ -461,6 +461,7 @@ impl App {
             ("y / Y", "Copy name / full path"),
             ("v", "Multi-select (Space:toggle d:delete)"),
             ("S-h", "Toggle hidden files"),
+            ("S-r", "Reload tree"),
             ("", "Copy mode"),
             ("h/j/k/l", "Move cursor"),
             ("C-d / C-u", "Half page down / up"),

@@ -53,6 +53,13 @@ impl Parser {
     pub fn screen(&self) -> &crate::screen::Screen {
         &self.screen
     }
+
+    /// 端末問い合わせ（DA1等）への応答バイト列を取り出し、内部バッファを
+    /// クリアする。`process` 呼び出し後にこれを取り出し、空でなければ
+    /// PTY（ホスト）へ書き戻すこと。
+    pub fn take_response(&mut self) -> Vec<u8> {
+        self.screen.take_response()
+    }
 }
 
 impl Default for Parser {

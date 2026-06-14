@@ -439,10 +439,16 @@ impl TerminalPane {
     }
 
     /// PTYから受信したデータをvt100パーサーに流し込む。
+    /// パース後、端末問い合わせ（DA1等）への応答が生成されていれば
+    /// PTYへ書き戻す。これをしないとyazi等のTUIが応答待ちでタイムアウトする。
     ///
     /// @param data - PTYからの出力バイト列
     pub fn process_output(&mut self, data: &[u8]) {
         self.parser.process(data);
+        let response = self.parser.take_response();
+        if !response.is_empty() {
+            self.write_to_pty(&response);
+        }
     }
 
     /// PTYにバイト列を書き込む（キー入力の転送）。
@@ -509,15 +515,11 @@ impl Pane for TerminalPane {
     }
 
     fn process_output(&mut self, data: &[u8]) {
-        self.parser.process(data);
+        TerminalPane::process_output(self, data);
     }
 
     fn write_to_pty(&mut self, data: &[u8]) {
-        if let Some(ref mut pty) = self.pty
-            && pty.write(data).is_err()
-        {
-            self.pty_dead = true;
-        }
+        TerminalPane::write_to_pty(self, data);
     }
 
     fn as_any(&self) -> &dyn Any {
@@ -567,6 +569,55 @@ mod tests {
         let mut pane = create_test_pane();
         // PTYがない状態でwrite_to_ptyを呼んでもパニックしないことを確認
         pane.write_to_pty(b"test");
+    }
+
+    #[test]
+    fn da1_query_produces_vt102_response() {
+        // DA1要求（CSI c）にVT102互換応答を返す。これがないとyazi等が
+        // read_until_da1でタイムアウトし起動が遅延する。
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        parser.process(b"\x1b[c");
+        assert_eq!(parser.take_response(), b"\x1b[?6c");
+    }
+
+    #[test]
+    fn da1_with_explicit_zero_param_responds() {
+        // CSI 0 c も同じくPrimary DA要求として応答する
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        parser.process(b"\x1b[0c");
+        assert_eq!(parser.take_response(), b"\x1b[?6c");
+    }
+
+    #[test]
+    fn secondary_da_is_ignored() {
+        // Secondary DA（CSI > c）には応答しない
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        parser.process(b"\x1b[>c");
+        assert!(parser.take_response().is_empty());
+    }
+
+    #[test]
+    fn plain_output_produces_no_response() {
+        // 通常のテキスト出力では応答を生成しない
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        parser.process(b"hello world");
+        assert!(parser.take_response().is_empty());
+    }
+
+    #[test]
+    fn take_response_clears_buffer() {
+        // take_responseは取り出し後にバッファをクリアする
+        let mut parser = vt100::Parser::new(24, 80, 0);
+        parser.process(b"\x1b[c");
+        assert!(!parser.take_response().is_empty());
+        assert!(parser.take_response().is_empty());
+    }
+
+    #[test]
+    fn process_output_with_da1_does_not_panic_without_pty() {
+        // PTYなしでもDA1応答の書き戻し経路がパニックしないことを確認
+        let mut pane = create_test_pane();
+        pane.process_output(b"\x1b[c");
     }
 
     #[test]

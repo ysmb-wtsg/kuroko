@@ -80,6 +80,10 @@ pub struct Screen {
     visual_bell_count: usize,
 
     errors: usize,
+
+    /// 端末問い合わせ（DA1等）への応答として、ホスト側（PTY）へ
+    /// 書き戻すべきバイト列。`take_response` で取り出してクリアする。
+    response: Vec<u8>,
 }
 
 impl Screen {
@@ -107,7 +111,15 @@ impl Screen {
             visual_bell_count: 0,
 
             errors: 0,
+
+            response: Vec::new(),
         }
+    }
+
+    /// 端末問い合わせへの応答バイト列を取り出し、内部バッファをクリアする。
+    /// 呼び出し側はこれをPTY（ホスト）へ書き戻す。
+    pub(crate) fn take_response(&mut self) -> Vec<u8> {
+        std::mem::take(&mut self.response)
     }
 
     pub(crate) fn set_size(&mut self, rows: u16, cols: u16) {
@@ -1480,6 +1492,20 @@ impl Screen {
         self.grid_mut().set_scroll_region(top - 1, bottom - 1);
     }
 
+    // device attributes
+
+    /// Primary Device Attributes (DA1, `CSI c` / `CSI 0 c`) に応答する。
+    /// yazi等のTUIは起動時にDA1を送り、応答が来るまで他の問い合わせの
+    /// 結果をまとめて読む（read_until_da1）。応答しないと固定タイムアウトを
+    /// 消化して起動が大幅に遅延するため、VT102互換の応答を返す。
+    /// パラメータが省略または0以外（拡張要求）の場合は応答しない。
+    fn da1(&mut self, param: u16) {
+        if param == 0 {
+            // CSI ? 6 c = VT102。画像等の拡張機能は持たないと表明する。
+            self.response.extend_from_slice(b"\x1b[?6c");
+        }
+    }
+
     // osc codes
 
     fn osc0(&mut self, s: &[u8]) {
@@ -1579,6 +1605,7 @@ impl vte::Perform for Screen {
                     params,
                     self.grid().size(),
                 )),
+                'c' => self.da1(canonicalize_params_1(params, 0)),
                 _ => {
                     if log::log_enabled!(log::Level::Debug) {
                         log::debug!(

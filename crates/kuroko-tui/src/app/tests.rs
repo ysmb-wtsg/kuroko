@@ -41,7 +41,7 @@ fn colon_key() -> KeyEvent {
     press_key(KeyCode::Char(':'))
 }
 
-/// グローバルレイヤーのトグルキー（Ctrl+g）イベントを生成する
+/// グローバルモードのトグルキー（Ctrl+g）イベントを生成する
 fn toggle_key() -> KeyEvent {
     KeyEvent {
         code: KeyCode::Char('g'),
@@ -52,56 +52,58 @@ fn toggle_key() -> KeyEvent {
 }
 
 // ===========================================================================
-// 1. グローバルレイヤーの出入り
+// 1. グローバルモードの出入り
 // ===========================================================================
 
 #[test]
 fn starts_in_direct_state() {
     let app = App::new();
-    assert!(!app.global_layer);
+    assert!(!app.global_mode);
 }
 
 #[test]
-fn toggle_key_enters_global_layer() {
+fn toggle_key_enters_global_mode() {
     let mut app = App::new();
     let actions = app.handle_key(toggle_key());
     app.dispatch_actions(actions);
-    assert!(app.global_layer);
+    assert!(app.global_mode);
 }
 
 #[test]
-fn toggle_key_exits_global_layer() {
+fn toggle_key_exits_global_mode() {
     let mut app = App::new();
-    app.global_layer = true;
+    app.global_mode = true;
     let actions = app.handle_key(toggle_key());
     app.dispatch_actions(actions);
-    assert!(!app.global_layer);
+    assert!(!app.global_mode);
 }
 
 #[test]
-fn esc_exits_global_layer() {
+fn esc_exits_global_mode() {
     let mut app = App::new();
-    app.global_layer = true;
+    app.global_mode = true;
     let actions = app.handle_global_key(esc_key());
     app.dispatch_actions(actions);
-    assert!(!app.global_layer);
+    assert!(!app.global_mode);
 }
 
 #[test]
-fn i_exits_global_layer() {
+fn i_does_not_exit_global_mode() {
+    // i は解除キーから除外済み。グローバルモード中の i は無操作で状態を維持する
     let mut app = App::new();
-    app.global_layer = true;
+    app.global_mode = true;
     let actions = app.handle_global_key(i_key());
+    assert!(actions.is_empty());
     app.dispatch_actions(actions);
-    assert!(!app.global_layer);
+    assert!(app.global_mode);
 }
 
 #[test]
 fn esc_flows_to_pty_in_direct_state() {
     let mut app = App::new();
-    // 直通状態のEscはレイヤー操作ではなくPTYへ転送される（vim/agent中断のため）
+    // 直通状態のEscはグローバルモード操作ではなくPTYへ転送される（vim/agent中断のため）
     let actions = app.handle_direct_key(esc_key());
-    assert!(!app.global_layer);
+    assert!(!app.global_mode);
     assert!(
         actions
             .iter()
@@ -344,9 +346,9 @@ fn select_tab_out_of_range_is_noop() {
 // ===========================================================================
 
 #[test]
-fn colon_opens_command_palette_in_global_layer() {
+fn colon_opens_command_palette_in_global_mode() {
     let mut app = App::new();
-    app.global_layer = true;
+    app.global_mode = true;
     let actions = app.handle_global_key(colon_key());
     app.dispatch_actions(actions);
     assert!(app.overlay.command_palette.is_some());
@@ -393,12 +395,12 @@ fn filetree_receives_keys_directly_in_direct_state() {
 }
 
 #[test]
-fn global_layer_moves_focus_from_filetree() {
+fn global_mode_moves_focus_from_filetree() {
     let mut app = App::new();
     app.dispatch_actions(vec![Action::ToggleFileTree]);
-    app.global_layer = true;
+    app.global_mode = true;
 
-    // レイヤー中の h はペイン種別に関わらずフォーカス移動になる
+    // グローバルモード中の h はペイン種別に関わらずフォーカス移動になる
     let actions = app.handle_global_key(press_key(KeyCode::Char('h')));
     assert!(
         actions
@@ -408,12 +410,12 @@ fn global_layer_moves_focus_from_filetree() {
 }
 
 #[test]
-fn global_layer_resizes_with_filetree_focused() {
+fn global_mode_resizes_with_filetree_focused() {
     let mut app = App::new();
     app.dispatch_actions(vec![Action::ToggleFileTree]);
-    app.global_layer = true;
+    app.global_mode = true;
 
-    // レイヤー中の H はfilerフォーカス中でもリサイズになる（旧Normalモードでは不可だった）
+    // グローバルモード中の H はfilerフォーカス中でもリサイズになる（旧Normalモードでは不可だった）
     let actions = app.handle_global_key(press_key(KeyCode::Char('H')));
     assert!(
         actions
@@ -423,12 +425,12 @@ fn global_layer_resizes_with_filetree_focused() {
 }
 
 #[test]
-fn panel_toggle_works_in_global_layer_from_filetree() {
+fn panel_toggle_works_in_global_mode_from_filetree() {
     let mut app = App::new();
     app.dispatch_actions(vec![Action::ToggleFileTree]);
-    app.global_layer = true;
+    app.global_mode = true;
 
-    // レイヤー中の f はファイルツリーに渡らずパネルトグルとして処理される
+    // グローバルモード中の f はファイルツリーに渡らずパネルトグルとして処理される
     let actions = app.handle_global_key(press_key(KeyCode::Char('f')));
     assert!(actions.iter().any(|a| matches!(a, Action::ToggleFileTree)));
 }
@@ -455,7 +457,7 @@ fn q_closes_help() {
 #[test]
 fn command_palette_blocks_global_key_handling() {
     let mut app = App::new();
-    app.global_layer = true;
+    app.global_mode = true;
     app.overlay.command_palette = Some(CommandPalette::new());
     let actions = app.handle_key(press_key(KeyCode::Char('q')));
     app.dispatch_actions(actions);
@@ -474,9 +476,9 @@ fn quit_action_sets_should_quit() {
 }
 
 #[test]
-fn q_key_in_global_layer_quits() {
+fn q_key_in_global_mode_quits() {
     let mut app = App::new();
-    app.global_layer = true;
+    app.global_mode = true;
     let actions = app.handle_global_key(press_key(KeyCode::Char('q')));
     app.dispatch_actions(actions);
     assert!(app.should_quit);
@@ -559,35 +561,35 @@ fn close_all_terminal_tabs_closes_bottom_panel() {
 }
 
 // ===========================================================================
-// 9. コピーモードとレイヤーの連携
+// 9. コピーモードとグローバルモードの連携
 // ===========================================================================
 
 #[test]
-fn enter_in_global_layer_starts_copy_mode_and_exits_layer() {
+fn enter_in_global_mode_starts_copy_mode_and_exits_layer() {
     let mut app = App::new();
-    app.global_layer = true;
+    app.global_mode = true;
     // メインペイン（エージェント）フォーカス中のEnterはコピーモード開始
     let actions = app.handle_global_key(press_key(KeyCode::Enter));
     assert!(actions.iter().any(|a| matches!(a, Action::EnterCopyMode)));
-    // コピーモードはペイン内部状態のためレイヤーは抜ける
-    assert!(!app.global_layer);
+    // コピーモードはペイン内部状態のためグローバルモードは抜ける
+    assert!(!app.global_mode);
 }
 
 #[test]
 fn enter_in_copy_mode_exits_copy_mode_to_direct() {
     let mut app = App::new();
-    // コピーモード開始（グローバルレイヤー経由でレイヤーは抜ける）
-    app.global_layer = true;
+    // コピーモード開始（グローバルモード経由で開始し、グローバルモードは抜ける）
+    app.global_mode = true;
     app.handle_global_key(press_key(KeyCode::Enter))
         .into_iter()
         .for_each(|a| app.dispatch_action(a));
-    assert!(!app.global_layer);
+    assert!(!app.global_mode);
 
     // コピーモード中のEnterは終了アクションを返す（グローバルへは戻らない）
     let actions = app.handle_copy_mode_key(press_key(KeyCode::Enter));
     assert!(actions.iter().any(|a| matches!(a, Action::ExitCopyMode)));
     actions.into_iter().for_each(|a| app.dispatch_action(a));
-    assert!(!app.global_layer);
+    assert!(!app.global_mode);
 }
 
 // ===========================================================================
@@ -597,10 +599,10 @@ fn enter_in_copy_mode_exits_copy_mode_to_direct() {
 #[test]
 fn redraw_action_is_noop() {
     let mut app = App::new();
-    let layer_before = app.global_layer;
+    let layer_before = app.global_mode;
     let focused_before = app.focused;
     app.dispatch_action(Action::Redraw);
-    assert_eq!(app.global_layer, layer_before);
+    assert_eq!(app.global_mode, layer_before);
     assert_eq!(app.focused, focused_before);
 }
 

@@ -17,11 +17,11 @@ krk.opt.leader = " "
 -- (send-to-agent, preview, in-app editor); the external tool handles its own keys.
 -- krk.opt.file_manager = "yazi"
 
--- Global layer toggle key (default: Ctrl+g)
+-- Global mode toggle key (default: Ctrl+g)
 -- krk.keymap.set_toggle_key("<C-g>")
 
 -- Keybinding examples
--- context "global": active inside the global layer (single keystrokes)
+-- context "global": active inside the global mode (single keystrokes)
 -- krk.keymap.set("global", "<leader>t", function()
 --     krk.pane.toggle("terminal")
 -- end)

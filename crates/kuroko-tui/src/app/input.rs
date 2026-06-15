@@ -1,5 +1,5 @@
 //! App構造体のキーボード・マウス入力処理。
-//! 直通/グローバルレイヤーのキーハンドリング、マウスイベント処理、ペーストイベント処理を担当する。
+//! 直通/グローバルモードのキーハンドリング、マウスイベント処理、ペーストイベント処理を担当する。
 
 use ratatui::crossterm::event::{
     KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind,
@@ -304,12 +304,12 @@ impl App {
     }
 
     /// 直通状態のキー処理。
-    /// トグルキーでグローバルレイヤーに入り、それ以外は全キー（Escを含む）を
+    /// トグルキーでグローバルモードに入り、それ以外は全キー（Escを含む）を
     /// フォーカス中ペインへ転送する。アプリはデフォルトでは一切キーを奪わない。
     pub(super) fn handle_direct_key(&mut self, key: KeyEvent) -> Vec<Action> {
-        // トグルキーでグローバルレイヤーに入る
+        // トグルキーでグローバルモードに入る
         if key.kind == KeyEventKind::Press && self.is_layer_toggle(&key) {
-            self.global_layer = true;
+            self.global_mode = true;
             return vec![];
         }
 
@@ -338,17 +338,17 @@ impl App {
         }
     }
 
-    /// グローバルレイヤー中のキー処理。
+    /// グローバルモード中のキー処理。
     /// ペイン種別に関わらず同一の単発キーでグローバル操作を行い、
-    /// キーはペインへ一切流さない。トグルキー・Esc・i で直通に戻る。
+    /// キーはペインへ一切流さない。トグルキー・Esc で直通に戻る。
     pub(super) fn handle_global_key(&mut self, key: KeyEvent) -> Vec<Action> {
         if key.kind != KeyEventKind::Press {
             return vec![];
         }
 
-        // トグルキー・Esc・i で直通に戻る
-        if self.is_layer_toggle(&key) || matches!(key.code, KeyCode::Esc | KeyCode::Char('i')) {
-            self.global_layer = false;
+        // トグルキー・Esc で直通に戻る
+        if self.is_layer_toggle(&key) || matches!(key.code, KeyCode::Esc) {
+            self.global_mode = false;
             return vec![];
         }
 
@@ -426,7 +426,7 @@ impl App {
             }
 
             // コピーモード（ターミナル/エージェントペインにフォーカス中のみ）。
-            // コピーモードはペイン内部状態のため、レイヤーは抜けてから入る
+            // コピーモードはペイン内部状態のため、グローバルモードは抜けてから入る
             KeyCode::Enter => {
                 let is_terminal_or_agent = self
                     .panes
@@ -434,7 +434,7 @@ impl App {
                     .map(|p| matches!(p.pane_type(), PaneType::Terminal | PaneType::Agent))
                     .unwrap_or(false);
                 if is_terminal_or_agent {
-                    self.global_layer = false;
+                    self.global_mode = false;
                     vec![Action::EnterCopyMode]
                 } else {
                     vec![]
@@ -500,9 +500,9 @@ impl App {
                     ];
                 }
             }
-            // Enter/q/Esc で終了。グローバルレイヤーへは戻さずエージェント（直通）に戻る
-            // （コピーモード中は global_layer は既に false のため ExitCopyMode のみでよい）。
-            // Enter はグローバルレイヤーからの開始キーと対になるトグルとして機能する。
+            // Enter/q/Esc で終了。グローバルモードへは戻さずエージェント（直通）に戻る
+            // （コピーモード中は global_mode は既に false のため ExitCopyMode のみでよい）。
+            // Enter はグローバルモードからの開始キーと対になるトグルとして機能する。
             KeyCode::Enter | KeyCode::Char('q') | KeyCode::Esc => {
                 return vec![Action::ExitCopyMode];
             }

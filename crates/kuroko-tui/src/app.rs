@@ -1,5 +1,5 @@
 //! アプリケーションのメインループと状態管理。
-//! イベントの受信・ディスパッチ、直通/グローバルレイヤーの入力ルーティング、描画を統括する。
+//! イベントの受信・ディスパッチ、直通/グローバルモードの入力ルーティング、描画を統括する。
 
 mod file_ops;
 mod input;
@@ -44,8 +44,8 @@ pub struct App {
     layout: LayoutNode,
     /// 現在フォーカスされているペインのID
     focused: PaneId,
-    /// グローバルレイヤー中かどうか（false = 全キーがフォーカス中ペインへ直通）
-    global_layer: bool,
+    /// グローバルモード中かどうか（false = 全キーがフォーカス中ペインへ直通）
+    global_mode: bool,
     /// 次に発行するペインIDのカウンター
     next_pane_id: u64,
     /// PTY出力の受信チャネル
@@ -172,7 +172,7 @@ impl App {
             panes,
             layout: LayoutNode::Leaf(main_id),
             focused: main_id,
-            global_layer: false,
+            global_mode: false,
             next_pane_id: 1,
             pty_rx,
             pty_tx,
@@ -389,14 +389,14 @@ impl App {
             return actions;
         }
 
-        if self.global_layer {
+        if self.global_mode {
             self.handle_global_key(key)
         } else {
             self.handle_direct_key(key)
         }
     }
 
-    /// グローバルレイヤーのトグルキー（Vim記法）を返す。
+    /// グローバルモードのトグルキー（Vim記法）を返す。
     /// Lua側で変更されていればその値、なければデフォルト値。
     fn layer_toggle_key(&self) -> String {
         self.keymap_registry
@@ -405,7 +405,7 @@ impl App {
             .unwrap_or_else(|| DEFAULT_TOGGLE_KEY.to_string())
     }
 
-    /// キーイベントがグローバルレイヤーのトグルキーかどうかを判定する
+    /// キーイベントがグローバルモードのトグルキーかどうかを判定する
     pub(super) fn is_layer_toggle(&self, key: &KeyEvent) -> bool {
         key_event_to_string(key).is_some_and(|s| s == self.layer_toggle_key())
     }
@@ -415,7 +415,7 @@ impl App {
     fn try_lua_keymap(&self, key: &KeyEvent) -> Option<Vec<Action>> {
         let registry = self.keymap_registry.as_ref()?;
         let key_str = key_event_to_string(key)?;
-        let context = if self.global_layer {
+        let context = if self.global_mode {
             KeymapContext::Global
         } else {
             KeymapContext::Direct

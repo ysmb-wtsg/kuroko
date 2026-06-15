@@ -73,13 +73,13 @@ impl LuaRuntime {
 
     /// krk.keymap モジュールを作成する。
     /// `krk.keymap.set(context, key, callback)` でカスタムキーバインドを登録し、
-    /// `krk.keymap.set_toggle_key(key)` でグローバルレイヤーのトグルキーを変更できる。
+    /// `krk.keymap.set_toggle_key(key)` でグローバルモードのトグルキーを変更できる。
     fn create_keymap_module(&self) -> mlua::Result<Table> {
         let keymap = self.lua.create_table()?;
         let registry = self.keymap_registry.clone();
 
         // krk.keymap.set(context, key, callback)
-        // context は "global"（グローバルレイヤー中） | "direct"（直通中の先取り）
+        // context は "global"（グローバルモード中） | "direct"（直通中の先取り）
         let set_fn = self.lua.create_function(
             move |lua, (context, key, callback): (String, String, Function)| {
                 // リーダーキーの展開: krk.opt.leader を取得
@@ -109,7 +109,7 @@ impl LuaRuntime {
         keymap.set("set", set_fn)?;
 
         // krk.keymap.set_toggle_key(key)
-        // グローバルレイヤーのトグルキーを変更する（デフォルト: <C-g>）
+        // グローバルモードのトグルキーを変更する（デフォルト: <C-g>）
         let registry = self.keymap_registry.clone();
         let set_toggle_fn = self.lua.create_function(move |_, key: String| {
             let mut reg = registry.lock().unwrap();

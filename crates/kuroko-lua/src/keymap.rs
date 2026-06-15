@@ -6,13 +6,13 @@ use std::sync::{Arc, Mutex};
 
 use mlua::RegistryKey;
 
-/// グローバルレイヤーのトグルキーのデフォルト値。
+/// グローバルモードのトグルキーのデフォルト値。
 /// 改行系（Enter / Ctrl+j）と無関係で全端末に確実に届き、エージェントの入力を奪わない
 /// （Ctrl+Spaceは端末によりNUL不達、Ctrl+jはエージェントの改行挿入と衝突するため不採用）。
 pub const DEFAULT_TOGGLE_KEY: &str = "<C-g>";
 
 /// キーマップの検索コンテキスト。
-/// Global = グローバルレイヤー中、Direct = 直通中（キーがペインへ流れる状態）
+/// Global = グローバルモード中、Direct = 直通中（キーがペインへ流れる状態）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeymapContext {
     Global,
@@ -29,11 +29,11 @@ pub struct KeymapEntry {
 /// コンテキストとキー文字列からキーマップエントリを引くレジストリ。
 /// Arc<Mutex<>> で LuaRuntime と App の間で共有する。
 pub struct KeymapRegistry {
-    /// グローバルレイヤー中のキーバインド
+    /// グローバルモード中のキーバインド
     global: HashMap<String, KeymapEntry>,
     /// 直通中にAppが先取りするキーバインド（デフォルト空＝衝突ゼロ）
     direct: HashMap<String, KeymapEntry>,
-    /// グローバルレイヤーのトグルキー（Vim記法）
+    /// グローバルモードのトグルキー（Vim記法）
     toggle_key: String,
 }
 
@@ -86,12 +86,12 @@ impl KeymapRegistry {
         }
     }
 
-    /// グローバルレイヤーのトグルキーを返す
+    /// グローバルモードのトグルキーを返す
     pub fn toggle_key(&self) -> &str {
         &self.toggle_key
     }
 
-    /// グローバルレイヤーのトグルキーを変更する
+    /// グローバルモードのトグルキーを変更する
     pub fn set_toggle_key(&mut self, key: String) {
         self.toggle_key = key;
     }

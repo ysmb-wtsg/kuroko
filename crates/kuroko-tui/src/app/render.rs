@@ -115,7 +115,7 @@ impl App {
             }
 
             // フォーカス中ペインの端末カーソルを表示する。
-            // 直通状態でオーバーレイ・タブリネームが無いときのみ（グローバルレイヤー中は
+            // 直通状態でオーバーレイ・タブリネームが無いときのみ（グローバルモード中は
             // キーがペインに行かないため、誤解を避けてカーソルを出さない）。
             let overlay_active = self.overlay.command_palette.is_some()
                 || self.overlay.file_preview.is_some()
@@ -124,7 +124,7 @@ impl App {
                 || self.overlay.file_prompt.is_some()
                 || self.overlay.help_visible
                 || self.overlay.rename_input.is_some();
-            if !self.global_layer
+            if !self.global_mode
                 && !overlay_active
                 && let Some(body) = focused_body
                 && let Some(pane) = self.panes.get(&self.focused)
@@ -315,15 +315,15 @@ impl App {
     }
 
     /// ステータスバーを描画する。
-    /// フォーカス中ペインのタイトル・グローバルレイヤー状態・エージェント状態・一時メッセージを集約表示する。
+    /// フォーカス中ペインのタイトル・グローバルモード状態・エージェント状態・一時メッセージを集約表示する。
     fn render_status_bar(&self, frame: &mut ratatui::Frame, area: Rect) {
         let t = theme::get();
 
         let mut spans = Vec::new();
 
-        // 先頭バッジ: グローバルレイヤー中はGLOBAL、コピーモード中はCOPYを表示する。
+        // 先頭バッジ: グローバルモード中はGLOBAL、コピーモード中はCOPYを表示する。
         // どちらもアプリの「特殊な入力状態」を表し相互排他なので、同じスロット・同じ
-        // スタイルで入れ替えて表示する（コピーモード中はglobal_layerは必ずfalse）。
+        // スタイルで入れ替えて表示する（コピーモード中はglobal_modeは必ずfalse）。
         let copy_offset = self
             .panes
             .get(&self.focused)
@@ -338,7 +338,7 @@ impl App {
             })
             .filter(|(in_copy, _)| *in_copy)
             .map(|(_, offset)| offset);
-        let leading_badge = if self.global_layer {
+        let leading_badge = if self.global_mode {
             Some(" GLOBAL ".to_string())
         } else {
             copy_offset.map(|offset| {
@@ -414,9 +414,9 @@ impl App {
             area,
         );
 
-        // 右端にヘルプコマンドのヒントを表示（グローバルレイヤー中のみ。
+        // 右端にヘルプコマンドのヒントを表示（グローバルモード中のみ。
         // 直通中は`:`がペインに送られるため誤誘導になる）
-        if self.global_layer {
+        if self.global_mode {
             frame.render_widget(
                 Paragraph::new(Span::styled(
                     " :help ",
@@ -435,9 +435,9 @@ impl App {
 
         // (キー, 説明) のリスト。空キーはセクション見出し
         let entries: &[(&str, &str)] = &[
-            ("", "Global layer"),
-            ("C-Space", "Enter / leave global layer"),
-            ("Esc / i", "Back to direct input"),
+            ("", "Global mode"),
+            ("C-Space", "Enter / leave global mode"),
+            ("Esc", "Back to direct input"),
             ("h/j/k/l", "Focus pane left/down/up/right"),
             ("Tab / S-Tab", "Focus next / previous pane"),
             ("H/J/K/L", "Resize pane"),

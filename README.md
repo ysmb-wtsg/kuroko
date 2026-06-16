@@ -21,6 +21,7 @@ kuroko unifies the **file tree**, **git**, and the **terminal** into one screen,
 - **Git**: embed lazygit / tig / gitui in the right panel for staging, committing, and history without leaving the workspace
 - **Terminal**: full PTY-backed shells running side by side, so your tools (vim, fzf, ...) behave exactly as in a plain terminal
 - **AI agent integration**: embed Claude Code, Codex, and custom agents via PTY, right next to your files and git
+- **Agent status at a glance**: each tab shows a status dot — working / ready / exited — and the status bar summarizes how many agents are waiting, so you can tell which agent needs you without switching tabs
 - **Panel management**: toggle and resize the file tree, terminal, and git panels to compose the layout you want
 - **Tab system**: agent tabs and terminal tabs managed independently
 - **Conflict-free input**: all keys go straight to the focused pane; pane management lives in a global mode behind `Ctrl+g`

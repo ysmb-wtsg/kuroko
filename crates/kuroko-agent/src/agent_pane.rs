@@ -3,6 +3,7 @@
 
 use std::any::Any;
 use std::sync::mpsc;
+use std::time::Instant;
 
 use ratatui::Frame;
 use ratatui::layout::Rect;
@@ -11,7 +12,8 @@ use kuroko_core::{Action, AppEvent, Pane, PaneId, PaneType};
 use kuroko_terminal::TerminalPane;
 use kuroko_terminal::pty_handle::PtyMessage;
 
-use crate::provider::{AgentProvider, AgentStatus, BuiltinProvider};
+use crate::provider::{AgentProvider, BuiltinProvider};
+use crate::status::{ActivityTracker, AgentStatus};
 
 /// AIエージェントペイン。
 /// 内部にTerminalPaneを保持し、PTY操作を委譲する。
@@ -19,8 +21,8 @@ use crate::provider::{AgentProvider, AgentStatus, BuiltinProvider};
 pub struct AgentPane {
     /// 委譲先のターミナルペイン
     inner: TerminalPane,
-    /// エージェントの現在のステータス
-    status: AgentStatus,
+    /// 出力活動からステータスを推定するトラッカー
+    activity: ActivityTracker,
 }
 
 impl AgentPane {
@@ -45,17 +47,7 @@ impl AgentPane {
 
         Self {
             inner: TerminalPane::from_command(id, &title, cols, rows, pty_sender, cmd),
-            status: AgentStatus::Starting,
-        }
-    }
-
-    /// PTYから受信したデータをvt100パーサーに流し込み、ステータスを更新する。
-    /// 出力の有無からアイドル/作業中を推定する。
-    pub fn process_output(&mut self, data: &[u8]) {
-        self.inner.process_output(data);
-        // 出力があればステータスをStartingからIdleまたはWorkingに更新
-        if self.status == AgentStatus::Starting {
-            self.status = AgentStatus::Idle;
+            activity: ActivityTracker::new(),
         }
     }
 
@@ -67,7 +59,7 @@ impl AgentPane {
     /// PTYプロセスが終了済みかどうかを設定し、ステータスをExitedに更新する
     pub fn set_pty_dead(&mut self) {
         self.inner.set_pty_dead();
-        self.status = AgentStatus::Exited;
+        self.activity.mark_exited();
     }
 
     /// PTYが使用不能かどうかを返す
@@ -158,9 +150,10 @@ impl AgentPane {
         self.inner.has_selection()
     }
 
-    /// 現在のエージェントステータスを返す
+    /// 現在のエージェントステータスを返す。
+    /// 最後の出力からの経過時間で作業中/入力待ちを推定する。
     pub fn status(&self) -> AgentStatus {
-        self.status
+        self.activity.status_at(Instant::now())
     }
 }
 
@@ -198,6 +191,8 @@ impl Pane for AgentPane {
 
     fn process_output(&mut self, data: &[u8]) {
         self.inner.process_output(data);
+        // 出力が届いている間はWorking、途絶えたらIdleと推定するため受信時刻を記録する
+        self.activity.record_output(Instant::now());
     }
 
     fn write_to_pty(&mut self, data: &[u8]) {

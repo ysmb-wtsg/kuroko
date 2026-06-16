@@ -1,20 +1,7 @@
 //! AIエージェントプロバイダーの定義。
-//! 各エージェント（Claude Code、Codex等）の起動コマンドとステータス検出を抽象化する。
+//! 各エージェント（Claude Code、Codex等）の起動コマンドを抽象化する。
 
 use portable_pty::CommandBuilder;
-
-/// エージェントの状態
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum AgentStatus {
-    /// 起動中
-    Starting,
-    /// 入力待ち（アイドル）
-    Idle,
-    /// 処理中
-    Working,
-    /// 終了済み
-    Exited,
-}
 
 /// エージェントプロバイダーの共通インターフェース。
 /// 各AIエージェントの起動コマンドと状態検出ロジックを定義する。

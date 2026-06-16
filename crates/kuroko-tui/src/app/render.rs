@@ -219,9 +219,11 @@ impl App {
                 .get(tab_id)
                 .and_then(|p| p.as_any().downcast_ref::<AgentPane>())
                 .and_then(|ap| match ap.status() {
+                    // Working=作業中(黄), Idle=入力待ち＝あなたの番(緑), Exited=終了(薄)
                     AgentStatus::Working => Some(("● ", t.accent_warning)),
+                    AgentStatus::Idle => Some(("● ", t.accent_positive)),
                     AgentStatus::Exited => Some(("● ", t.text_dim)),
-                    AgentStatus::Starting | AgentStatus::Idle => None,
+                    AgentStatus::Starting => None,
                 });
 
             if is_renaming {
@@ -377,20 +379,28 @@ impl App {
 
         // エージェント状態の集約表示（非フォーカスのエージェントも対象）
         let mut working = 0_usize;
+        let mut idle = 0_usize;
         let mut exited = 0_usize;
         for pane in self.panes.values() {
             if let Some(ap) = pane.as_any().downcast_ref::<AgentPane>() {
                 match ap.status() {
                     AgentStatus::Working => working += 1,
+                    AgentStatus::Idle => idle += 1,
                     AgentStatus::Exited => exited += 1,
-                    AgentStatus::Starting | AgentStatus::Idle => {}
+                    AgentStatus::Starting => {}
                 }
             }
         }
+        // 優先度: 作業中 > 入力待ち(ready) > 終了。どれが「あなたの番」かを一目で示す
         if working > 0 {
             spans.push(Span::styled(
-                " ● working ",
+                format!(" ● {working} working "),
                 Style::default().fg(t.accent_warning),
+            ));
+        } else if idle > 0 {
+            spans.push(Span::styled(
+                format!(" ● {idle} ready "),
+                Style::default().fg(t.accent_positive),
             ));
         } else if exited > 0 {
             spans.push(Span::styled(" ● exited ", Style::default().fg(t.text_dim)));

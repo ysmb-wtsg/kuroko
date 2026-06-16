@@ -3,6 +3,8 @@
 
 mod agent_pane;
 mod provider;
+mod status;
 
 pub use agent_pane::AgentPane;
-pub use provider::{AgentProvider, AgentStatus, BuiltinProvider};
+pub use provider::{AgentProvider, BuiltinProvider};
+pub use status::{ActivityTracker, AgentStatus};

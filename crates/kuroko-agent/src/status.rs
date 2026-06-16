@@ -79,6 +79,41 @@ impl Default for ActivityTracker {
     }
 }
 
+/// Working→Idle 遷移を一度だけ検出する通知トラッカー。
+///
+/// エージェントが処理を終えてユーザーの番（Idle）になった「瞬間」を捉える。
+/// 連続して観測しても、再度Workingに戻ってから再びIdleになるまで発火しない
+/// （Idleが継続している間に毎フレーム通知が飛ぶのを防ぐ）。
+pub struct IdleNotifier {
+    /// 直前に観測した状態。未観測ならNone。
+    prev: Option<AgentStatus>,
+}
+
+impl IdleNotifier {
+    /// 新しい通知トラッカーを生成する。
+    ///
+    /// @returns IdleNotifierインスタンス
+    pub fn new() -> Self {
+        Self { prev: None }
+    }
+
+    /// 現在状態を観測し、Working→Idle へ遷移した瞬間なら true を返す。
+    ///
+    /// @param current - 現在のエージェント状態
+    /// @returns 通知すべき遷移が起きたら true
+    pub fn observe(&mut self, current: AgentStatus) -> bool {
+        let fired = self.prev == Some(AgentStatus::Working) && current == AgentStatus::Idle;
+        self.prev = Some(current);
+        fired
+    }
+}
+
+impl Default for IdleNotifier {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,5 +171,46 @@ mod tests {
         tracker.mark_exited();
         // 出力直後でもExitedが優先される
         assert_eq!(tracker.status_at(t0), AgentStatus::Exited);
+    }
+
+    #[test]
+    fn notifier_fires_on_working_to_idle() {
+        let mut n = IdleNotifier::new();
+        assert!(!n.observe(AgentStatus::Working));
+        // Working→Idle の瞬間だけ発火する
+        assert!(n.observe(AgentStatus::Idle));
+    }
+
+    #[test]
+    fn notifier_does_not_refire_while_idle() {
+        let mut n = IdleNotifier::new();
+        n.observe(AgentStatus::Working);
+        assert!(n.observe(AgentStatus::Idle));
+        // Idleが継続している間は再発火しない
+        assert!(!n.observe(AgentStatus::Idle));
+        assert!(!n.observe(AgentStatus::Idle));
+    }
+
+    #[test]
+    fn notifier_refires_after_returning_to_working() {
+        let mut n = IdleNotifier::new();
+        n.observe(AgentStatus::Working);
+        assert!(n.observe(AgentStatus::Idle));
+        // 再び作業して再び入力待ちになれば、もう一度発火する
+        assert!(!n.observe(AgentStatus::Working));
+        assert!(n.observe(AgentStatus::Idle));
+    }
+
+    #[test]
+    fn notifier_ignores_starting_and_exited_to_idle() {
+        // Starting→Idle（出力ゼロのケース）では発火しない
+        let mut n = IdleNotifier::new();
+        n.observe(AgentStatus::Starting);
+        assert!(!n.observe(AgentStatus::Idle));
+
+        // Exited→Idle のような異常遷移でも発火しない
+        let mut n2 = IdleNotifier::new();
+        n2.observe(AgentStatus::Exited);
+        assert!(!n2.observe(AgentStatus::Idle));
     }
 }

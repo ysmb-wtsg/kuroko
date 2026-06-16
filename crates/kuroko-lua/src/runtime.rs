@@ -63,6 +63,8 @@ impl LuaRuntime {
         opt.set("leader", " ")?;
         opt.set("tick_rate", 50)?;
         opt.set("main_pane", "claude-code")?;
+        opt.set("notify", true)?;
+        opt.set("notify_message", "{title}: waiting for your input")?;
         // editor は既定値を設定しない（未設定時は $EDITOR → vim にフォールバックさせるため）
         // file_manager も既定値を設定しない（未設定/"builtin"時は内蔵ファイルツリーを使うため）
         krk.set("opt", opt)?;
@@ -175,6 +177,17 @@ impl LuaRuntime {
         let krk: Table = globals.get("krk").ok()?;
         let opt: Table = krk.get("opt").ok()?;
         opt.get::<String>(key).ok()
+    }
+
+    /// krk.opt テーブルから真偽値設定値を取得する。
+    ///
+    /// @param key - 取得するキー名
+    /// @returns 値が存在すれば真偽値、なければNone
+    pub fn get_opt_bool(&self, key: &str) -> Option<bool> {
+        let globals = self.lua.globals();
+        let krk: Table = globals.get("krk").ok()?;
+        let opt: Table = krk.get("opt").ok()?;
+        opt.get::<bool>(key).ok()
     }
 
     /// Luaファイルを実行する。

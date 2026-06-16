@@ -17,6 +17,14 @@ krk.opt.leader = " "
 -- (send-to-agent, preview, in-app editor); the external tool handles its own keys.
 -- krk.opt.file_manager = "yazi"
 
+-- Desktop notification when an agent finishes and waits for your input.
+-- Sends an OSC 9 escape to the outer terminal (iTerm2/WezTerm/Ghostty/kitty).
+-- Set false to disable.
+-- krk.opt.notify = true
+
+-- Notification body template. "{title}" is replaced with the agent pane name.
+-- krk.opt.notify_message = "{title}: waiting for your input"
+
 -- Global mode toggle key (default: Ctrl+g)
 -- krk.keymap.set_toggle_key("<C-g>")
 

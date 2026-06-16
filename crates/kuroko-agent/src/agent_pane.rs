@@ -13,7 +13,7 @@ use kuroko_terminal::TerminalPane;
 use kuroko_terminal::pty_handle::PtyMessage;
 
 use crate::provider::{AgentProvider, BuiltinProvider};
-use crate::status::{ActivityTracker, AgentStatus};
+use crate::status::{ActivityTracker, AgentStatus, IdleNotifier};
 
 /// AIエージェントペイン。
 /// 内部にTerminalPaneを保持し、PTY操作を委譲する。
@@ -23,6 +23,10 @@ pub struct AgentPane {
     inner: TerminalPane,
     /// 出力活動からステータスを推定するトラッカー
     activity: ActivityTracker,
+    /// Working→Idle 遷移を検出してデスクトップ通知を発火させるトラッカー
+    idle_notifier: IdleNotifier,
+    /// エージェント名（"Agent:" プレフィックスを含まない表示名。通知本文に使う）
+    name: String,
 }
 
 impl AgentPane {
@@ -48,6 +52,8 @@ impl AgentPane {
         Self {
             inner: TerminalPane::from_command(id, &title, cols, rows, pty_sender, cmd),
             activity: ActivityTracker::new(),
+            idle_notifier: IdleNotifier::new(),
+            name: provider.name().to_string(),
         }
     }
 
@@ -154,6 +160,23 @@ impl AgentPane {
     /// 最後の出力からの経過時間で作業中/入力待ちを推定する。
     pub fn status(&self) -> AgentStatus {
         self.activity.status_at(Instant::now())
+    }
+
+    /// エージェント名を返す。タブ用の `title()`（"Agent:" プレフィックス付き）と異なり、
+    /// 通知本文向けにプレフィックスなしの名前（例: "Claude Code"）を返す。
+    ///
+    /// @returns エージェント名
+    pub fn agent_name(&self) -> &str {
+        &self.name
+    }
+
+    /// 入力待ちへの遷移（Working→Idle）を検出する。通知すべき瞬間なら true を返す。
+    /// 状態は時間経過で変わるため、メインループから毎フレーム呼び出す想定。
+    ///
+    /// @returns エージェントが処理を終えて入力待ちになった瞬間なら true
+    pub fn poll_idle_notification(&mut self) -> bool {
+        let status = self.activity.status_at(Instant::now());
+        self.idle_notifier.observe(status)
     }
 }
 

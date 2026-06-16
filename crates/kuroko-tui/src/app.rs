@@ -64,6 +64,10 @@ pub struct App {
     should_quit: bool,
     /// 直前のフレームの描画領域（方向フォーカス計算用）
     last_area: Rect,
+    /// エージェントの入力待ち通知（OSC 9）を出すか（設定 `krk.opt.notify`、デフォルト有効）
+    notify_enabled: bool,
+    /// 通知本文のテンプレート（設定 `krk.opt.notify_message`）。`{title}` をペイン名に置換する
+    notify_message: String,
 
     // --- メインタブ ---
     /// メインペインのタブ管理
@@ -94,6 +98,19 @@ pub struct App {
     bottom_ratio: f32,
     /// ボトムターミナルのタブ管理
     bottom_terminal_tabs: TabManager,
+}
+
+/// 外側端末へデスクトップ通知のOSCエスケープ（OSC 9）を送出する。
+/// 対応端末（iTerm2 / WezTerm / Ghostty / kitty 等）がOSの通知として表示する。
+/// 非対応端末は未知のOSCとして無視するため、画面表示への影響はない。
+///
+/// @param body - 通知本文（テンプレート展開済み）
+fn send_desktop_notification(body: &str) {
+    use std::io::Write;
+    // ESC ] 9 ; <body> BEL
+    let mut stdout = io::stdout();
+    let _ = write!(stdout, "\x1b]9;{body}\x07");
+    let _ = stdout.flush();
 }
 
 impl Default for App {
@@ -143,6 +160,19 @@ impl App {
             .and_then(|lua| lua.get_opt_string("file_manager"))
             .filter(|s| !s.trim().is_empty() && s != "builtin");
 
+        // エージェント入力待ち通知の有効/無効（設定がなければデフォルトで有効）
+        let notify_enabled = lua_runtime
+            .as_ref()
+            .and_then(|lua| lua.get_opt_bool("notify"))
+            .unwrap_or(true);
+
+        // 通知本文テンプレート（設定がなければデフォルト文言。`{title}` をペイン名に置換）
+        let notify_message = lua_runtime
+            .as_ref()
+            .and_then(|lua| lua.get_opt_string("notify_message"))
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "{title}: waiting for your input".to_string());
+
         // メインペインの種類を設定から決定する（デフォルト: "claude-code"）
         let main_pane_setting = lua_runtime
             .as_ref()
@@ -182,6 +212,8 @@ impl App {
             overlay: OverlayState::new(),
             should_quit: false,
             last_area: Rect::default(),
+            notify_enabled,
+            notify_message,
             main_tabs: TabManager::with_initial(main_id),
             tab_provider,
             side_content: None,
@@ -249,6 +281,9 @@ impl App {
 
             // PTY出力を処理
             self.drain_pty_messages();
+
+            // エージェントが入力待ちになったらデスクトップ通知を送る
+            self.poll_agent_notifications();
 
             // Luaからのアクションを処理
             self.drain_lua_actions();
@@ -322,6 +357,33 @@ impl App {
     fn drain_lua_actions(&mut self) {
         while let Ok(action) = self.lua_action_rx.try_recv() {
             self.dispatch_action(action);
+        }
+    }
+
+    /// 各エージェントペインの入力待ち遷移（Working→Idle）を検出し、
+    /// デスクトップ通知（OSC 9）を送出する。
+    ///
+    /// 状態は時間経過で変わるため、毎フレーム全エージェントペインをポーリングする。
+    /// 通知が無効でも遷移状態は更新しておき、有効化直後の取りこぼし通知を防ぐ。
+    ///
+    /// アプリ内のペインフォーカスでは抑制しない。ユーザーは単一ペインで作業したまま
+    /// 端末ウィンドウごと離れる（ブラウザ等へ移る）ことが多く、その場合フォーカス中
+    /// ペインを抑制すると通知が一切出なくなるため。端末ウィンドウがフォーカス中の
+    /// 通知抑制は端末側（WezTerm等の `notification_handling`）に委ねる。
+    fn poll_agent_notifications(&mut self) {
+        let notify_enabled = self.notify_enabled;
+        let mut bodies = Vec::new();
+        for pane in self.panes.values_mut() {
+            if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
+                let fired = ap.poll_idle_notification();
+                if fired && notify_enabled {
+                    // テンプレートの `{title}` をエージェント名（"Agent:" なし）へ置換して本文を組み立てる
+                    bodies.push(self.notify_message.replace("{title}", ap.agent_name()));
+                }
+            }
+        }
+        for body in bodies {
+            send_desktop_notification(&body);
         }
     }
 

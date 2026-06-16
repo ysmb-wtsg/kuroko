@@ -108,6 +108,8 @@ krk.pane.focus(direction)  -- Move focus ("next", "prev", "left", "right", "up",
 krk.opt.leader             -- Leader key
 krk.opt.main_pane          -- Main pane type ("claude-code", "codex", "terminal")
 krk.opt.git_tool           -- Git panel tool ("lazygit", "tig", "gitui", etc.)
+krk.opt.notify             -- Desktop notification when an agent waits for input (default: true)
+krk.opt.notify_message     -- Notification body template ("{title}" = agent name)
 
 -- Keybindings
 -- context: "global" (inside the global mode) | "direct" (intercepted before the pane)

@@ -1,36 +1,16 @@
 # 🥷 `kuroko`
 
+English | [日本語](README.ja.md)
+
 ![kuroko demo](docs/images/demo.gif)
 
-**kuroko** is a terminal-native IDE for the AI agent era.
-
-It brings the three things you reach for most — a **file tree**, **git**, and a **terminal** — into one integrated workspace, with AI agents at the center. No window juggling, no context switching: browse files, run git, drive a shell, and direct agents side by side on a single screen.
-
-It's not an editor with AI bolted on — it's an environment built around agents, with the customizability and extensibility of Neovim.
-
-The command name is `krk`.
-
-> [!NOTE]
-> The name comes from the kabuki *kuroko* (黒子) — the black-clad stagehand the audience agrees not to see. AI agents stand between you and the code, veiling the source like a kuroko — on the "black screen" of your terminal.
+**kuroko** is a terminal-native IDE.
 
 ## ✨ Features
 
-kuroko unifies the **file tree**, **git**, and the **terminal** into one screen, with AI agents driving the workflow:
-
-- **File tree**: gitignore-aware navigation, file operations (create / rename / delete), preview, and inline editing in your `$EDITOR` — always one keystroke away
-- **Git**: embed lazygit / tig / gitui in the right panel for staging, committing, and history without leaving the workspace
-- **Terminal**: full PTY-backed shells running side by side, so your tools (vim, fzf, ...) behave exactly as in a plain terminal
-- **AI agent integration**: embed Claude Code, Codex, and custom agents via PTY, right next to your files and git
-- **Agent status at a glance**: each tab shows a status dot — working / ready / exited — and the status bar summarizes how many agents are waiting, so you can tell which agent needs you without switching tabs
-- **Panel management**: toggle and resize the file tree, terminal, and git panels to compose the layout you want
-- **Tab system**: agent tabs and terminal tabs managed independently
-- **Conflict-free input**: all keys go straight to the focused pane; pane management lives in a global mode behind `Ctrl+g`
-- **Lua customization**: configure via `~/.config/krk/init.lua`
-
-## ⚡️ Requirements
-
-- A terminal emulator (kitty keyboard protocol recommended for `Shift+Enter`)
-- For building from source: Rust 1.96.0 or later
+- **Built-in file tree, git client, and terminal**: just open kuroko for a seamless development workflow.
+- **Multi-agent execution**: agent panes are tabbed, and each tab's status (waiting for input / done) is visible at a glance.
+- **Lua customization**: customizable via `~/.config/krk/init.lua`.
 
 ## 📦 Installation
 
@@ -42,23 +22,13 @@ brew install ysmb-wtsg/tap/kuroko
 
 ### Build from source
 
-Requires Rust 1.96.0 or later (managing with [mise](https://mise.jdx.dev/) is recommended).
-
 ```sh
 git clone https://github.com/ysmb-wtsg/kuroko.git
 cd kuroko
 cargo build --release
 ```
 
-The binary is generated at `target/release/krk`.
-
-### Development
-
-Enable the git hooks to run `cargo fmt --check` and `cargo clippy` before every push:
-
-```sh
-git config core.hooksPath .githooks
-```
+Rust 1.96.0 or later is required.
 
 ## 🚀 Usage
 
@@ -66,12 +36,8 @@ git config core.hooksPath .githooks
 krk
 ```
 
-By default every key — including `Esc` and `Ctrl` combinations — goes straight to the focused pane, so tools running inside (vim, Claude Code, fzf, ...) behave exactly as they would in a plain terminal.
-
-Press `Ctrl+g` to enter the **global mode**, where single keystrokes manage panes. Press `Ctrl+g` or `Esc` to go back to direct input. The status bar shows a `GLOBAL` badge while the mode is active.
-
-> [!TIP]
-> In an agent / terminal pane, `Enter` submits and **`Ctrl+j` inserts a newline** for multi-line input. `Shift+Enter` and `Alt+Enter` also insert a newline on terminals that report them (kitty keyboard protocol); since many terminals cannot distinguish `Shift+Enter` from `Enter`, `Ctrl+j` is the portable shortcut.
+Press `Ctrl+g` to enter **global mode**, where you can perform meta operations such as resizing panes and moving focus.
+To leave global mode, press either `Ctrl+g` or `Esc`.
 
 ### Global mode keybindings
 
@@ -108,13 +74,14 @@ krk.pane.focus(direction)  -- Move focus ("next", "prev", "left", "right", "up",
 krk.opt.leader             -- Leader key
 krk.opt.main_pane          -- Main pane type ("claude-code", "codex", "terminal")
 krk.opt.git_tool           -- Git panel tool ("lazygit", "tig", "gitui", etc.)
+krk.opt.file_manager       -- File manager ("yazi", etc. Unset/"builtin" uses the built-in tree)
 krk.opt.notify             -- Desktop notification when an agent waits for input (default: true)
 krk.opt.notify_message     -- Notification body template ("{title}" = agent name)
 
 -- Keybindings
 -- context: "global" (inside the global mode) | "direct" (intercepted before the pane)
 krk.keymap.set(context, key, callback)
-krk.keymap.set_toggle_key(key)  -- Change the global mode toggle (default: "<C-g>")
+krk.keymap.set_toggle_key(key)  -- Change the global mode toggle key (default: "<C-g>")
 ```
 
 Example — direct `Ctrl+h/j/k/l` focus movement:
@@ -125,8 +92,63 @@ for key, dir in pairs({ ["<C-h>"] = "left", ["<C-j>"] = "down", ["<C-k>"] = "up"
 end
 ```
 
-> [!WARNING]
-> Binding keys in the `direct` context steals them from apps running inside panes. Prefer the `global` context unless you specifically want a key to bypass the focused tool.
+## 🎨 Customization
+
+The main panels can be replaced with third-party tools. All of them are configured in `~/.config/krk/init.lua`.
+
+### File manager
+
+Set a launch command in `krk.opt.file_manager` to replace the file tree panel with an external file manager.
+
+```lua
+krk.opt.file_manager = "yazi"
+```
+
+![yazi](docs/images/yazi.png)
+
+When unset or `"builtin"`, the built-in file tree is used. If the specified command is not found, it falls back to the built-in tree.
+
+### Git
+
+You can specify a git client in `krk.opt.git_tool`.
+
+```lua
+krk.opt.git_tool = "tig"
+```
+
+![tig](docs/images/tig.png)
+
+### Notifications
+
+A desktop notification is shown when an agent is waiting for input.
+Toggle it with `krk.opt.notify` (default: `true`), and set the body template with `krk.opt.notify_message` (`{title}` is replaced with the agent name).
+
+![notification](docs/images/notification.png)
+
+```lua
+krk.opt.notify = true
+krk.opt.notify_message = "{title}: waiting for input"
+```
+
+### Agents
+
+Choose the agent to place in the main pane with `krk.opt.main_pane`.
+
+![codex](docs/images/codex.png)
+
+```lua
+krk.opt.main_pane = "codex"
+```
+
+## 💡 Inspiration
+
+AI-agent-driven vibe coding no longer requires viewing or editing files by hand.
+Developers are shifting away from the traditional paradigm — the editor at the center, AI agents welcomed as guests — toward a new mindset that places AI agents at the center.
+`kuroko` embodies this new paradigm: an IDE for the new era.
+
+> [!NOTE]
+> The name comes from the kabuki *kuroko* (黒子) — the black-clad stagehand the audience agrees to treat as invisible.
+> kuroko is the stagehand on the "black screen" that supports your vibe coding.
 
 ## 📄 License
 

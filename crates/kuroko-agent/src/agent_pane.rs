@@ -220,6 +220,10 @@ impl Pane for AgentPane {
 
     fn write_to_pty(&mut self, data: &[u8]) {
         self.inner.write_to_pty(data);
+        // ユーザーがエージェントへ入力を送った＝新しいターンの開始。
+        // これを境に次の入力待ち通知を再武装する。ターミナルの自動応答（DA1等）は
+        // inner内部で完結しこの経路を通らないため、誤再武装しない。
+        self.idle_notifier.rearm();
     }
 
     fn as_any(&self) -> &dyn Any {

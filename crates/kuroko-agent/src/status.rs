@@ -79,30 +79,47 @@ impl Default for ActivityTracker {
     }
 }
 
-/// Working→Idle 遷移を一度だけ検出する通知トラッカー。
+/// 入力待ちへの遷移を「ユーザーのターンごとに一度だけ」通知するトラッカー。
 ///
 /// エージェントが処理を終えてユーザーの番（Idle）になった「瞬間」を捉える。
-/// 連続して観測しても、再度Workingに戻ってから再びIdleになるまで発火しない
-/// （Idleが継続している間に毎フレーム通知が飛ぶのを防ぐ）。
+/// ただし1回の応答ターンの途中でも、ツール実行や長考で出力が IDLE_AFTER 以上
+/// 途絶えると Working↔Idle がちらつく。これを毎回通知すると「1度の入力待ち」で
+/// 何度も鳴ってしまうため、一度発火したら武装解除し、ユーザーが次の入力を送って
+/// `rearm()` で再武装するまで再発火しない（ターン単位で1通知に集約する）。
 pub struct IdleNotifier {
     /// 直前に観測した状態。未観測ならNone。
     prev: Option<AgentStatus>,
+    /// 通知可能か。発火で false、ユーザー入力（rearm）で true に戻る。
+    armed: bool,
 }
 
 impl IdleNotifier {
-    /// 新しい通知トラッカーを生成する。
+    /// 新しい通知トラッカーを生成する（初期状態は武装済み）。
     ///
     /// @returns IdleNotifierインスタンス
     pub fn new() -> Self {
-        Self { prev: None }
+        Self {
+            prev: None,
+            armed: true,
+        }
     }
 
-    /// 現在状態を観測し、Working→Idle へ遷移した瞬間なら true を返す。
+    /// ユーザー入力を受けて再武装する。次の Working→Idle 遷移で再び通知できるようになる。
+    pub fn rearm(&mut self) {
+        self.armed = true;
+    }
+
+    /// 現在状態を観測し、武装中に Working→Idle へ遷移した瞬間なら true を返す。
+    /// 発火すると武装解除し、`rearm()` まで再発火しない。
     ///
     /// @param current - 現在のエージェント状態
     /// @returns 通知すべき遷移が起きたら true
     pub fn observe(&mut self, current: AgentStatus) -> bool {
-        let fired = self.prev == Some(AgentStatus::Working) && current == AgentStatus::Idle;
+        let fired =
+            self.armed && self.prev == Some(AgentStatus::Working) && current == AgentStatus::Idle;
+        if fired {
+            self.armed = false;
+        }
         self.prev = Some(current);
         fired
     }
@@ -192,11 +209,26 @@ mod tests {
     }
 
     #[test]
-    fn notifier_refires_after_returning_to_working() {
+    fn notifier_does_not_refire_within_same_turn() {
+        // 1ターンの途中でツール実行等により Working↔Idle がちらついても、
+        // rearm（ユーザー入力）がない限り再発火しない＝ターンあたり1通知
         let mut n = IdleNotifier::new();
         n.observe(AgentStatus::Working);
         assert!(n.observe(AgentStatus::Idle));
-        // 再び作業して再び入力待ちになれば、もう一度発火する
+        // 出力が再開→再び途絶えても、まだ同じユーザーのターンなので鳴らない
+        assert!(!n.observe(AgentStatus::Working));
+        assert!(!n.observe(AgentStatus::Idle));
+        assert!(!n.observe(AgentStatus::Working));
+        assert!(!n.observe(AgentStatus::Idle));
+    }
+
+    #[test]
+    fn notifier_refires_after_rearm() {
+        let mut n = IdleNotifier::new();
+        n.observe(AgentStatus::Working);
+        assert!(n.observe(AgentStatus::Idle));
+        // ユーザーが入力を送って次のターンが始まれば、もう一度発火する
+        n.rearm();
         assert!(!n.observe(AgentStatus::Working));
         assert!(n.observe(AgentStatus::Idle));
     }

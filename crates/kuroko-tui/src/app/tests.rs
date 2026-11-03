@@ -3,7 +3,7 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
-use kuroko_core::{Action, PaneId, PaneType, SideContent};
+use kuroko_core::{Action, AppEvent, PaneId, PaneType, SideContent};
 
 use super::App;
 use super::overlay::CommandPalette;
@@ -775,5 +775,25 @@ fn select_active_tab_moves_focus_to_main() {
     let mut app = App::new();
     app.dispatch_action(Action::ToggleSessions);
     app.dispatch_action(Action::SelectTab(0));
+    assert_eq!(app.focused, app.main_active_id());
+}
+
+#[test]
+fn new_session_from_sidebar_closes_it() {
+    let mut app = App::new();
+    app.dispatch_action(Action::ToggleSessions);
+    let sessions_id = app.sessions_id.expect("sessions pane is created");
+    let before = app.main_tabs.len();
+
+    let actions = app
+        .panes
+        .get_mut(&sessions_id)
+        .expect("sessions pane exists")
+        .handle_event(&AppEvent::Key(press_key(KeyCode::Char('n'))));
+    app.dispatch_actions(actions);
+
+    assert_eq!(app.main_tabs.len(), before + 1);
+    assert!(!app.sessions_visible);
+    assert!(!app.layout.pane_ids().contains(&sessions_id));
     assert_eq!(app.focused, app.main_active_id());
 }

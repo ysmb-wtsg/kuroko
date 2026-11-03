@@ -43,6 +43,8 @@ pub struct OpenSession {
 enum Entry {
     /// 開いているタブ（`open` のインデックス）
     Open(usize),
+    /// 新規セッションを立ち上げる行（TABS の末尾）
+    New,
     /// 過去セッション（`history` のインデックス）
     History(usize),
 }
@@ -157,6 +159,7 @@ impl SessionListPane {
     fn entries(&self) -> Vec<Entry> {
         (0..self.open.len())
             .map(Entry::Open)
+            .chain(std::iter::once(Entry::New))
             .chain(self.visible_history().map(Entry::History))
             .collect()
     }
@@ -166,20 +169,29 @@ impl SessionListPane {
         self.selected = self.selected.min(len.saturating_sub(1));
     }
 
-    /// 選択行に対するEnterの動作
+    /// 選択行に対するEnterの動作。
+    /// タブを開いたらサイドバーは役目を終えるので、併せて閉じる。
     fn activate(&self) -> Vec<Action> {
-        match self.entries().get(self.selected) {
-            Some(Entry::Open(i)) => vec![Action::SelectTab(self.open[*i].tab_index)],
+        let action = match self.entries().get(self.selected) {
+            Some(Entry::Open(i)) => Action::SelectTab(self.open[*i].tab_index),
+            Some(Entry::New) => Action::NewTab,
             Some(Entry::History(i)) => {
                 let session = &self.history[*i];
-                vec![Action::ResumeSession {
+                Action::ResumeSession {
                     id: session.id.clone(),
                     title: session.title.clone(),
-                }]
+                }
             }
-            None => vec![],
-        }
+            None => return vec![],
+        };
+        open_and_close(action)
     }
+}
+
+/// タブを開くアクションの後にサイドバーを閉じるアクションを続ける。
+/// サイドバーのペインがイベントを受けるのは表示中のみなので、トグルで閉じられる。
+fn open_and_close(action: Action) -> Vec<Action> {
+    vec![action, Action::ToggleSessions]
 }
 
 /// 更新日時を「5m」「3h」「2d」のような短い相対表記にする
@@ -257,6 +269,7 @@ impl Pane for SessionListPane {
                         Span::styled(open.name.clone(), name_style),
                     ])
                 }
+                Entry::New => Line::styled("+ New session", Style::default().fg(t.text_muted)),
                 Entry::History(i) => {
                     let session = &self.history[*i];
                     Line::from(vec![
@@ -305,7 +318,7 @@ impl Pane for SessionListPane {
             KeyCode::Char('g') | KeyCode::Home => self.selected = 0,
             KeyCode::Char('G') | KeyCode::End => self.selected = last,
             KeyCode::Enter | KeyCode::Char('l') => return self.activate(),
-            KeyCode::Char('n') => return vec![Action::NewTab],
+            KeyCode::Char('n') => return open_and_close(Action::NewTab),
             KeyCode::Char('r') => self.refresh(),
             _ => {}
         }
@@ -371,6 +384,7 @@ mod tests {
             vec![
                 Entry::Open(0),
                 Entry::Open(1),
+                Entry::New,
                 Entry::History(0),
                 Entry::History(2)
             ]
@@ -382,7 +396,32 @@ mod tests {
         let mut pane = pane();
         pane.handle_event(&key(KeyCode::Char('j')));
         let actions = pane.handle_event(&key(KeyCode::Enter));
-        assert!(matches!(actions.as_slice(), [Action::SelectTab(1)]));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::SelectTab(1), Action::ToggleSessions]
+        ));
+    }
+
+    #[test]
+    fn enter_on_new_row_starts_new_session() {
+        let mut pane = pane();
+        pane.handle_event(&key(KeyCode::Char('j')));
+        pane.handle_event(&key(KeyCode::Char('j')));
+        let actions = pane.handle_event(&key(KeyCode::Enter));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::NewTab, Action::ToggleSessions]
+        ));
+    }
+
+    #[test]
+    fn n_starts_new_session_and_closes_sidebar() {
+        let mut pane = pane();
+        let actions = pane.handle_event(&key(KeyCode::Char('n')));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::NewTab, Action::ToggleSessions]
+        ));
     }
 
     #[test]
@@ -392,7 +431,8 @@ mod tests {
         let actions = pane.handle_event(&key(KeyCode::Enter));
         assert!(matches!(
             actions.as_slice(),
-            [Action::ResumeSession { id, title }] if id == "c" && title == "C"
+            [Action::ResumeSession { id, title }, Action::ToggleSessions]
+                if id == "c" && title == "C"
         ));
     }
 

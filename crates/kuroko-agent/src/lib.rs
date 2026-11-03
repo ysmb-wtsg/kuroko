@@ -1,10 +1,13 @@
 //! kuroko-agent: AIエージェント統合ペイン。
-//! Claude Code、Codexなどのエージェントをラップし、PTY経由で操作する。
+//! Claude Code をラップし、PTY経由で操作する。
 
 mod agent_pane;
-mod provider;
+mod claude_command;
+pub mod claude_sessions;
+mod session_list_pane;
 mod status;
 
 pub use agent_pane::AgentPane;
-pub use provider::{AgentProvider, BuiltinProvider};
+pub use claude_command::{AGENT_NAME, SessionStart};
+pub use session_list_pane::{OpenSession, SessionListPane};
 pub use status::{ActivityTracker, AgentStatus};

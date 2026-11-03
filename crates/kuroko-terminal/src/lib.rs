@@ -5,4 +5,4 @@ pub mod pty_handle;
 mod terminal_pane;
 pub mod widget;
 
-pub use terminal_pane::TerminalPane;
+pub use terminal_pane::{SelectionKind, TerminalPane};

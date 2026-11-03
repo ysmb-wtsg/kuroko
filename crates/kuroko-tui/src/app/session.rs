@@ -21,6 +21,17 @@ pub struct SessionState {
     /// ボトムターミナルの高さ比率（メイン側の割合）
     #[serde(default = "default_bottom_ratio")]
     pub bottom_ratio: f32,
+    /// セッション一覧サイドバー（左）の表示状態
+    #[serde(default)]
+    pub sessions_visible: bool,
+    /// セッション一覧サイドバーの幅比率（左側の割合）
+    #[serde(default = "default_sessions_ratio")]
+    pub sessions_ratio: f32,
+}
+
+/// sessions_ratio のデフォルト値
+fn default_sessions_ratio() -> f32 {
+    0.2
 }
 
 /// side_ratio のデフォルト値
@@ -40,6 +51,8 @@ impl Default for SessionState {
             side_ratio: default_side_ratio(),
             bottom_visible: false,
             bottom_ratio: default_bottom_ratio(),
+            sessions_visible: false,
+            sessions_ratio: default_sessions_ratio(),
         }
     }
 }
@@ -97,6 +110,8 @@ mod tests {
             side_ratio: 0.4,
             bottom_visible: true,
             bottom_ratio: 0.6,
+            sessions_visible: true,
+            sessions_ratio: 0.25,
         };
         let json = serde_json::to_string(&state).unwrap();
         let restored: SessionState = serde_json::from_str(&json).unwrap();
@@ -104,6 +119,8 @@ mod tests {
         assert!((restored.side_ratio - 0.4).abs() < f32::EPSILON);
         assert!(restored.bottom_visible);
         assert!((restored.bottom_ratio - 0.6).abs() < f32::EPSILON);
+        assert!(restored.sessions_visible);
+        assert!((restored.sessions_ratio - 0.25).abs() < f32::EPSILON);
     }
 
     #[test]

@@ -12,7 +12,7 @@ use kuroko_core::{Action, AppEvent, Pane, PaneId, PaneType};
 use kuroko_terminal::TerminalPane;
 use kuroko_terminal::pty_handle::PtyMessage;
 
-use crate::provider::{AgentProvider, BuiltinProvider};
+use crate::claude_command::{AGENT_NAME, SessionStart, claude_command};
 use crate::status::{ActivityTracker, AgentStatus, IdleNotifier};
 
 /// AIエージェントペイン。
@@ -25,35 +25,35 @@ pub struct AgentPane {
     activity: ActivityTracker,
     /// Working→Idle 遷移を検出してデスクトップ通知を発火させるトラッカー
     idle_notifier: IdleNotifier,
-    /// エージェント名（"Agent:" プレフィックスを含まない表示名。通知本文に使う）
-    name: String,
+    /// Claude Code のセッションID（起動時に指定したもの）
+    session_id: String,
 }
 
 impl AgentPane {
-    /// 指定プロバイダーでエージェントペインを生成する。
+    /// Claude Code を起動するエージェントペインを生成する。
     ///
     /// @param id - ペインID
-    /// @param provider - エージェントプロバイダー
+    /// @param session - セッションの開始方法
     /// @param cols - 初期列数
     /// @param rows - 初期行数
     /// @param pty_sender - PTY出力の送信先チャネル
     /// @returns AgentPaneインスタンス
     pub fn new(
         id: PaneId,
-        provider: &BuiltinProvider,
+        session: SessionStart,
         cols: u16,
         rows: u16,
         pty_sender: mpsc::Sender<PtyMessage>,
     ) -> Self {
-        let title = provider.title();
-        let mut cmd = provider.command();
+        let title = format!("Agent: {AGENT_NAME}");
+        let mut cmd = claude_command(&session);
         cmd.cwd(std::env::current_dir().unwrap_or_else(|_| "/".into()));
 
         Self {
             inner: TerminalPane::from_command(id, &title, cols, rows, pty_sender, cmd),
             activity: ActivityTracker::new(),
             idle_notifier: IdleNotifier::new(),
-            name: provider.name().to_string(),
+            session_id: session.id().to_string(),
         }
     }
 
@@ -127,33 +127,15 @@ impl AgentPane {
         self.inner.screen_text()
     }
 
-    /// カーソルを上に移動する
-    pub fn move_cursor_up(&mut self) {
-        self.inner.move_cursor_up();
+    /// 起動時に指定したClaude CodeのセッションID
+    pub fn session_id(&self) -> &str {
+        &self.session_id
     }
-    /// カーソルを下に移動する
-    pub fn move_cursor_down(&mut self) {
-        self.inner.move_cursor_down();
-    }
-    /// カーソルを左に移動する
-    pub fn move_cursor_left(&mut self) {
-        self.inner.move_cursor_left();
-    }
-    /// カーソルを右に移動する
-    pub fn move_cursor_right(&mut self) {
-        self.inner.move_cursor_right();
-    }
-    /// テキスト選択の開始/解除をトグルする
-    pub fn toggle_selection(&mut self) {
-        self.inner.toggle_selection();
-    }
-    /// 選択範囲のテキストを返す（選択なしならカーソル行）
-    pub fn selected_text(&mut self) -> String {
-        self.inner.selected_text()
-    }
-    /// 選択中かどうかを返す
-    pub fn has_selection(&self) -> bool {
-        self.inner.has_selection()
+
+    /// 内包するターミナルペインへの可変参照を返す。
+    /// コピーモードのカーソル移動・選択などはTerminalPaneの操作をそのまま使う。
+    pub fn terminal_mut(&mut self) -> &mut TerminalPane {
+        &mut self.inner
     }
 
     /// 現在のエージェントステータスを返す。
@@ -167,7 +149,7 @@ impl AgentPane {
     ///
     /// @returns エージェント名
     pub fn agent_name(&self) -> &str {
-        &self.name
+        AGENT_NAME
     }
 
     /// 入力待ちへの遷移（Working→Idle）を検出する。通知すべき瞬間なら true を返す。

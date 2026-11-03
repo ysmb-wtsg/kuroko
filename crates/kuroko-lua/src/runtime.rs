@@ -65,7 +65,7 @@ impl LuaRuntime {
         opt.set("main_pane", "claude-code")?;
         opt.set("notify", true)?;
         opt.set("notify_message", "{title}: waiting for your input")?;
-        // editor は既定値を設定しない（未設定時は $EDITOR → vim にフォールバックさせるため）
+        // editor は既定値を設定しない（未設定時は $VISUAL → $EDITOR → nvim → vim にフォールバックさせるため）
         // file_manager も既定値を設定しない（未設定/"builtin"時は内蔵ファイルツリーを使うため）
         krk.set("opt", opt)?;
 

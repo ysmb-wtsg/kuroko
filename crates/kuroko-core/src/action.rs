@@ -44,6 +44,8 @@ pub enum Action {
     ToggleTerminal,
     /// 後方互換: Gitパネルの表示/非表示を切り替える
     ToggleGitPanel,
+    /// セッション一覧サイドバー（左）の表示/非表示を切り替える
+    ToggleSessions,
 
     // --- PTY操作 ---
     /// フォーカス中のPTYペインにバイト列を書き込む
@@ -62,6 +64,13 @@ pub enum Action {
     SelectTab(usize),
     /// アクティブタブの名前を変更する
     RenameTab(String),
+    /// Claude Code の過去セッションを再開する（既にタブで開いていればそのタブへ切り替える）
+    ResumeSession {
+        /// セッションID
+        id: String,
+        /// タブ名に使うセッションタイトル
+        title: String,
+    },
 
     // --- ターミナルタブ操作 ---
     /// 新しいターミナルタブを追加する

@@ -14,6 +14,58 @@ use kuroko_core::{Action, AppEvent, Pane, PaneId, PaneType};
 use crate::pty_handle::{PtyHandle, PtyMessage};
 use crate::widget::TerminalWidget;
 
+/// コピーモードの選択種別。Vimの `v`（文字単位）と `V`（行単位）に対応する。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionKind {
+    /// 文字単位の範囲選択
+    Char,
+    /// 行単位の範囲選択
+    Line,
+}
+
+/// 選択開始位置。スクロールに依存しない論理位置に変換できるよう、
+/// アンカーを張った時点のスクロールオフセットと画面上の行・列を保持する。
+#[derive(Debug, Clone, Copy)]
+struct SelectionAnchor {
+    scroll_offset: usize,
+    row: u16,
+    col: u16,
+    kind: SelectionKind,
+}
+
+/// 論理座標で正規化した選択範囲（start <= end）。
+/// 論理行は「画面行 - スクロールオフセット」で、値が大きいほど新しい行。
+#[derive(Debug, Clone, Copy)]
+struct SelectionRange {
+    start: (isize, u16),
+    end: (isize, u16),
+    kind: SelectionKind,
+}
+
+impl SelectionRange {
+    /// 論理行 `row`・列 `col` のセルが選択範囲内かを判定する
+    fn contains(&self, row: isize, col: u16) -> bool {
+        if row < self.start.0 || row > self.end.0 {
+            return false;
+        }
+        match self.kind {
+            SelectionKind::Line => true,
+            SelectionKind::Char => {
+                (row > self.start.0 || col >= self.start.1)
+                    && (row < self.end.0 || col <= self.end.1)
+            }
+        }
+    }
+}
+
+/// 単語移動（w/b/e）用の文字クラス。Vimの `word` 境界判定に準じる。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CharClass {
+    Blank,
+    Word,
+    Punct,
+}
+
 /// PTYベースのターミナルペイン。
 /// シェルプロセスを内包し、vt100パーサーで画面状態を管理する。
 pub struct TerminalPane {
@@ -37,11 +89,8 @@ pub struct TerminalPane {
     scroll_offset: usize,
     /// コピーモード時のカーソル位置（画面上の行, 列）
     copy_cursor: (u16, u16),
-    /// テキスト選択の開始位置。スクロールに依存しない絶対行位置で保持する。
-    /// 値は `scroll_offset * 1 + screen_row` ではなく、
-    /// `(anchor_scroll_offset, anchor_screen_row)` として保持し、
-    /// `anchor_absolute_row()` で論理行番号に変換する。
-    selection_anchor: Option<(usize, u16)>,
+    /// テキスト選択の開始位置（未選択ならNone）
+    selection_anchor: Option<SelectionAnchor>,
 }
 
 impl TerminalPane {
@@ -225,6 +274,7 @@ impl TerminalPane {
         } else {
             self.scroll_up(1);
         }
+        self.snap_cursor_to_char_head();
     }
 
     /// コピーモードのカーソルを下に移動する。
@@ -236,30 +286,233 @@ impl TerminalPane {
         } else {
             self.scroll_down(1);
         }
+        self.snap_cursor_to_char_head();
     }
 
-    /// コピーモードのカーソルを左に移動する
+    /// コピーモードのカーソルを左に移動する。全角文字は1文字（2セル）として飛ばす
     pub fn move_cursor_left(&mut self) {
         self.copy_cursor.1 = self.copy_cursor.1.saturating_sub(1);
+        self.snap_cursor_to_char_head();
     }
 
     /// コピーモードのカーソルを右に移動する
+    /// 全角文字は1文字（2セル）として飛ばす。
     pub fn move_cursor_right(&mut self) {
         let max_col = self.last_size.0.saturating_sub(1);
-        if self.copy_cursor.1 < max_col {
-            self.copy_cursor.1 += 1;
+        let (row, col) = self.copy_cursor;
+        let width = match self.parser.screen().cell(row, col) {
+            Some(cell) if cell.is_wide() => 2,
+            _ => 1,
+        };
+        // 行末の全角文字の上では、それ以上右へ進まない
+        if col + width <= max_col {
+            self.copy_cursor.1 = col + width;
         }
     }
 
-    /// テキスト選択を開始/解除する。
-    /// 未選択なら現在のカーソル位置をアンカーに設定、選択中なら解除する。
-    pub fn toggle_selection(&mut self) {
-        if self.selection_anchor.is_some() {
-            self.selection_anchor = None;
-        } else {
-            // スクロールオフセットと画面行を保存して絶対位置を記録する
-            self.selection_anchor = Some((self.scroll_offset, self.copy_cursor.0));
+    /// カーソルが全角文字の後半セルにあれば前半セルへ寄せる。
+    /// 後半セル上ではカーソル表示が文字に重ならず、移動が止まったように見えるため。
+    fn snap_cursor_to_char_head(&mut self) {
+        let (row, col) = self.copy_cursor;
+        let on_continuation = self
+            .parser
+            .screen()
+            .cell(row, col)
+            .is_some_and(|cell| cell.is_wide_continuation());
+        if on_continuation && col > 0 {
+            self.copy_cursor.1 = col - 1;
         }
+    }
+
+    /// カーソルを行頭（0列目）へ移動する（Vimの `0`）
+    pub fn move_cursor_line_start(&mut self) {
+        self.copy_cursor.1 = 0;
+    }
+
+    /// カーソルを行の最初の非空白文字へ移動する（Vimの `^`）
+    pub fn move_cursor_first_non_blank(&mut self) {
+        let row = self.copy_cursor.0;
+        self.copy_cursor.1 = (0..self.screen_cols())
+            .find(|&col| self.char_class(row, col) != CharClass::Blank)
+            .unwrap_or(0);
+    }
+
+    /// カーソルを行の最後の非空白文字へ移動する（Vimの `$`）
+    pub fn move_cursor_line_end(&mut self) {
+        let row = self.copy_cursor.0;
+        self.copy_cursor.1 = (0..self.screen_cols())
+            .rev()
+            .find(|&col| self.char_class(row, col) != CharClass::Blank)
+            .unwrap_or(0);
+    }
+
+    /// 次の単語の先頭へ移動する（Vimの `w`）。行末を越えると次の行へ進む。
+    pub fn move_word_forward(&mut self) {
+        let start_class = self.cursor_class();
+        // 現在の単語を抜ける。改行は単語境界として扱う
+        if start_class != CharClass::Blank {
+            loop {
+                match self.step_forward() {
+                    None => return,
+                    Some(true) => break,
+                    Some(false) if self.cursor_class() != start_class => break,
+                    Some(false) => {}
+                }
+            }
+        }
+        // 空白を読み飛ばす
+        while self.cursor_class() == CharClass::Blank {
+            if self.step_forward().is_none() {
+                return;
+            }
+        }
+    }
+
+    /// 前の単語の先頭へ移動する（Vimの `b`）。行頭を越えると前の行へ戻る。
+    pub fn move_word_backward(&mut self) {
+        if self.step_backward().is_none() {
+            return;
+        }
+        while self.cursor_class() == CharClass::Blank {
+            if self.step_backward().is_none() {
+                return;
+            }
+        }
+        self.extend_within_word(false);
+    }
+
+    /// 単語の末尾へ移動する（Vimの `e`）。既に末尾なら次の単語の末尾へ進む。
+    pub fn move_word_end(&mut self) {
+        if self.step_forward().is_none() {
+            return;
+        }
+        while self.cursor_class() == CharClass::Blank {
+            if self.step_forward().is_none() {
+                return;
+            }
+        }
+        self.extend_within_word(true);
+    }
+
+    /// 同じ文字クラスが続く限り、行内でカーソルを前方（forward=true）または後方へ進める
+    fn extend_within_word(&mut self, forward: bool) {
+        let (row, mut col) = self.copy_cursor;
+        let class = self.char_class(row, col);
+        let cols = self.screen_cols();
+        if forward {
+            while col + 1 < cols && self.char_class(row, col + 1) == class {
+                col += 1;
+            }
+        } else {
+            while col > 0 && self.char_class(row, col - 1) == class {
+                col -= 1;
+            }
+        }
+        self.copy_cursor.1 = col;
+        self.snap_cursor_to_char_head();
+    }
+
+    /// カーソルを1文字前方へ進める。行末なら次の行の先頭へ移る（必要に応じてスクロール）。
+    ///
+    /// @returns 移動できなければNone、行をまたいだらSome(true)、同じ行内ならSome(false)
+    fn step_forward(&mut self) -> Option<bool> {
+        if self.copy_cursor.1 + 1 < self.screen_cols() {
+            self.copy_cursor.1 += 1;
+            return Some(false);
+        }
+        let before = (self.copy_cursor.0, self.scroll_offset);
+        self.move_cursor_down();
+        if (self.copy_cursor.0, self.scroll_offset) == before {
+            return None;
+        }
+        self.copy_cursor.1 = 0;
+        Some(true)
+    }
+
+    /// カーソルを1文字後方へ戻す。行頭なら前の行の末尾へ移る（必要に応じてスクロール）。
+    ///
+    /// @returns 移動できなければNone、行をまたいだらSome(true)、同じ行内ならSome(false)
+    fn step_backward(&mut self) -> Option<bool> {
+        if self.copy_cursor.1 > 0 {
+            self.copy_cursor.1 -= 1;
+            return Some(false);
+        }
+        let before = (self.copy_cursor.0, self.scroll_offset);
+        self.move_cursor_up();
+        if (self.copy_cursor.0, self.scroll_offset) == before {
+            return None;
+        }
+        self.copy_cursor.1 = self.screen_cols().saturating_sub(1);
+        Some(true)
+    }
+
+    /// 画面の列数
+    fn screen_cols(&self) -> u16 {
+        self.parser.screen().size().1
+    }
+
+    /// カーソル位置の文字クラス
+    fn cursor_class(&self) -> CharClass {
+        self.char_class(self.copy_cursor.0, self.copy_cursor.1)
+    }
+
+    /// 画面上の指定セルの文字クラスを返す。
+    /// 全角文字の後半セルは前半セルと同じクラスとして扱う。
+    fn char_class(&self, row: u16, col: u16) -> CharClass {
+        let screen = self.parser.screen();
+        let Some(cell) = screen.cell(row, col) else {
+            return CharClass::Blank;
+        };
+        if cell.is_wide_continuation() && col > 0 {
+            return self.char_class(row, col - 1);
+        }
+        match cell.contents().chars().next() {
+            None => CharClass::Blank,
+            Some(c) if c.is_whitespace() => CharClass::Blank,
+            // 日本語などの非ASCII文字も単語構成文字として扱う
+            Some(c) if c.is_alphanumeric() || c == '_' || !c.is_ascii() => CharClass::Word,
+            Some(_) => CharClass::Punct,
+        }
+    }
+
+    /// テキスト選択を開始/切替/解除する（Vimの v / V と同じ挙動）。
+    /// 未選択なら現在のカーソル位置をアンカーに選択を開始する。
+    /// 同じ種別で選択中なら解除し、別種別で選択中ならアンカーを保ったまま種別を切り替える。
+    ///
+    /// @param kind - 選択種別（文字単位/行単位）
+    pub fn toggle_selection(&mut self, kind: SelectionKind) {
+        match self.selection_anchor.as_mut() {
+            Some(anchor) if anchor.kind == kind => self.selection_anchor = None,
+            Some(anchor) => anchor.kind = kind,
+            None => {
+                // スクロールオフセットと画面位置を保存して絶対位置を記録する
+                self.selection_anchor = Some(SelectionAnchor {
+                    scroll_offset: self.scroll_offset,
+                    row: self.copy_cursor.0,
+                    col: self.copy_cursor.1,
+                    kind,
+                });
+            }
+        }
+    }
+
+    /// 現在のアンカーとカーソルから、正規化済みの選択範囲を計算する
+    fn selection_range(&self) -> Option<SelectionRange> {
+        let anchor = self.selection_anchor?;
+        let a = (
+            Self::logical_row(anchor.scroll_offset, anchor.row),
+            anchor.col,
+        );
+        let c = (
+            Self::logical_row(self.scroll_offset, self.copy_cursor.0),
+            self.copy_cursor.1,
+        );
+        let (start, end) = if a <= c { (a, c) } else { (c, a) };
+        Some(SelectionRange {
+            start,
+            end,
+            kind: anchor.kind,
+        })
     }
 
     /// 選択中かどうかを返す
@@ -272,20 +525,15 @@ impl TerminalPane {
     ///
     /// @returns 選択範囲またはカーソル行のテキスト
     pub fn selected_text(&mut self) -> String {
-        let Some((anchor_offset, anchor_row)) = self.selection_anchor else {
+        let Some(range) = self.selection_range() else {
             // 選択なし: カーソル行1行のみをコピーする
             let row = self.copy_cursor.0;
             let screen = self.parser.screen();
             let cols = screen.size().1;
             return screen.contents_between(row, 0, row, cols);
         };
-        let anchor_logical = Self::logical_row(anchor_offset, anchor_row);
-        let cursor_logical = Self::logical_row(self.scroll_offset, self.copy_cursor.0);
-        let (start_logical, end_logical) = if anchor_logical <= cursor_logical {
-            (anchor_logical, cursor_logical)
-        } else {
-            (cursor_logical, anchor_logical)
-        };
+        let (start_logical, start_col) = range.start;
+        let (end_logical, end_col) = range.end;
 
         // 選択範囲がスクロールバック領域へ伸びる場合に備えてscroll_offsetを調整する。
         // 論理行Lが画面行Rになるには R = L + offset。
@@ -302,7 +550,12 @@ impl TerminalPane {
         let end_row = (end_logical + needed_offset as isize) as u16;
         let screen = self.parser.screen();
         let cols = screen.size().1;
-        let text = screen.contents_between(start_row, 0, end_row, cols);
+        // 行単位なら各行全体、文字単位ならアンカー〜カーソルの列まで（終端列を含む）
+        let (from_col, to_col) = match range.kind {
+            SelectionKind::Line => (0, cols),
+            SelectionKind::Char => (start_col, end_col.saturating_add(1).min(cols)),
+        };
+        let text = screen.contents_between(start_row, from_col, end_row, to_col);
 
         // 元のスクロール位置に戻す
         self.parser.set_scrollback(original_offset);
@@ -316,23 +569,10 @@ impl TerminalPane {
         (screen_row as isize) - (scroll_offset as isize)
     }
 
-    /// 指定セルが選択範囲内かどうかを判定する。
-    /// 行単位選択: 開始行から終了行まで各行全体がハイライトされる。
-    /// アンカーとカーソルの絶対行位置を比較して判定する。
-    pub fn is_cell_selected(&self, row: u16, _col: u16) -> bool {
-        let Some((anchor_offset, anchor_row)) = self.selection_anchor else {
-            return false;
-        };
-        let anchor_logical = Self::logical_row(anchor_offset, anchor_row);
-        let cursor_logical = Self::logical_row(self.scroll_offset, self.copy_cursor.0);
-        let cell_logical = Self::logical_row(self.scroll_offset, row);
-
-        let (start, end) = if anchor_logical <= cursor_logical {
-            (anchor_logical, cursor_logical)
-        } else {
-            (cursor_logical, anchor_logical)
-        };
-        cell_logical >= start && cell_logical <= end
+    /// 指定セル（画面上の行・列）が選択範囲内かどうかを判定する。
+    pub fn is_cell_selected(&self, row: u16, col: u16) -> bool {
+        self.selection_range()
+            .is_some_and(|range| range.contains(Self::logical_row(self.scroll_offset, row), col))
     }
 
     /// 現在の画面内容をテキストとして返す（クリップボードコピー用）。
@@ -400,22 +640,10 @@ impl TerminalPane {
 
         let mut widget = TerminalWidget::new(self.parser.screen());
         if self.copy_mode {
-            let cursor = self.copy_cursor;
-            let anchor = self.selection_anchor;
+            let range = self.selection_range();
             let scroll_offset = self.scroll_offset;
-            widget = widget.with_copy_mode(cursor, move |row, _col| {
-                let Some((anchor_offset, anchor_row)) = anchor else {
-                    return false;
-                };
-                let anchor_logical = (anchor_row as isize) - (anchor_offset as isize);
-                let cursor_logical = (cursor.0 as isize) - (scroll_offset as isize);
-                let cell_logical = (row as isize) - (scroll_offset as isize);
-                let (start, end) = if anchor_logical <= cursor_logical {
-                    (anchor_logical, cursor_logical)
-                } else {
-                    (cursor_logical, anchor_logical)
-                };
-                cell_logical >= start && cell_logical <= end
+            widget = widget.with_copy_mode(self.copy_cursor, move |row, col| {
+                range.is_some_and(|r| r.contains(Self::logical_row(scroll_offset, row), col))
             });
         }
         frame.render_widget(widget, area);
@@ -753,7 +981,7 @@ mod tests {
 
         // 画面行5（line 5）でアンカーを張り、画面行9（line 9）までカーソルを移動
         pane.copy_cursor = (5, 0);
-        pane.toggle_selection();
+        pane.toggle_selection(SelectionKind::Line);
         pane.copy_cursor = (9, 0);
 
         let text = pane.selected_text();
@@ -777,9 +1005,158 @@ mod tests {
 
         // 同一行でアンカーとカーソルを置く（1行だけ選択）
         pane.copy_cursor = (6, 0);
-        pane.toggle_selection();
+        pane.toggle_selection(SelectionKind::Line);
 
         let text = pane.selected_text();
         assert_eq!(text.trim_end(), "line 6");
+    }
+
+    /// 1行目に指定テキストを書き込み、コピーモードに入ったテストペインを返す
+    fn pane_with_line(text: &str) -> TerminalPane {
+        let mut pane = create_test_pane();
+        pane.process_output(text.as_bytes());
+        pane.enter_copy_mode();
+        pane
+    }
+
+    #[test]
+    fn char_selection_copies_partial_line() {
+        let mut pane = pane_with_line("foo bar baz");
+        pane.copy_cursor = (0, 4);
+        pane.toggle_selection(SelectionKind::Char);
+        pane.copy_cursor = (0, 6);
+        assert_eq!(pane.selected_text(), "bar");
+    }
+
+    #[test]
+    fn char_selection_backward_from_anchor() {
+        let mut pane = pane_with_line("foo bar baz");
+        pane.copy_cursor = (0, 6);
+        pane.toggle_selection(SelectionKind::Char);
+        pane.copy_cursor = (0, 4);
+        assert_eq!(pane.selected_text(), "bar");
+    }
+
+    #[test]
+    fn char_selection_spans_lines() {
+        let mut pane = pane_with_line("hello world\r\nsecond line");
+        pane.copy_cursor = (0, 6);
+        pane.toggle_selection(SelectionKind::Char);
+        pane.copy_cursor = (1, 5);
+        assert_eq!(pane.selected_text(), "world\nsecond");
+    }
+
+    #[test]
+    fn char_selection_highlights_only_range() {
+        let mut pane = pane_with_line("foo bar baz\r\nnext");
+        pane.copy_cursor = (0, 4);
+        pane.toggle_selection(SelectionKind::Char);
+        pane.copy_cursor = (1, 1);
+        assert!(!pane.is_cell_selected(0, 3));
+        assert!(pane.is_cell_selected(0, 4));
+        assert!(pane.is_cell_selected(0, 79));
+        assert!(pane.is_cell_selected(1, 0));
+        assert!(pane.is_cell_selected(1, 1));
+        assert!(!pane.is_cell_selected(1, 2));
+    }
+
+    #[test]
+    fn toggle_selection_switches_kind_and_clears() {
+        let mut pane = pane_with_line("foo bar baz");
+        pane.copy_cursor = (0, 4);
+        pane.toggle_selection(SelectionKind::Char);
+        pane.copy_cursor = (0, 6);
+        // 別種別ならアンカーを保ったまま行単位に切り替わる
+        pane.toggle_selection(SelectionKind::Line);
+        assert!(pane.has_selection());
+        assert_eq!(pane.selected_text().trim_end(), "foo bar baz");
+        // 同じ種別をもう一度押すと解除
+        pane.toggle_selection(SelectionKind::Line);
+        assert!(!pane.has_selection());
+    }
+
+    #[test]
+    fn word_motions_within_line() {
+        let mut pane = pane_with_line("foo.bar  baz");
+        pane.move_word_forward();
+        assert_eq!(pane.copy_cursor, (0, 3)); // "."
+        pane.move_word_forward();
+        assert_eq!(pane.copy_cursor, (0, 4)); // "bar"
+        pane.move_word_forward();
+        assert_eq!(pane.copy_cursor, (0, 9)); // "baz"
+        pane.move_word_end();
+        assert_eq!(pane.copy_cursor, (0, 11));
+        pane.move_word_backward();
+        assert_eq!(pane.copy_cursor, (0, 9));
+        pane.move_word_backward();
+        assert_eq!(pane.copy_cursor, (0, 4));
+    }
+
+    #[test]
+    fn word_motions_cross_lines() {
+        let mut pane = pane_with_line("foo\r\n  bar");
+        pane.move_word_forward();
+        assert_eq!(pane.copy_cursor, (1, 2));
+        pane.move_word_backward();
+        assert_eq!(pane.copy_cursor, (0, 0));
+    }
+
+    #[test]
+    fn word_motion_treats_wide_chars_as_word() {
+        let mut pane = pane_with_line("ab 日本語 cd");
+        pane.move_word_forward();
+        assert_eq!(pane.copy_cursor, (0, 3));
+        pane.move_word_end();
+        // 「語」の前半セル（後半セルには止まらない）
+        assert_eq!(pane.copy_cursor, (0, 7));
+        pane.toggle_selection(SelectionKind::Char);
+        pane.move_word_backward();
+        assert_eq!(pane.selected_text(), "日本語");
+    }
+
+    #[test]
+    fn line_start_end_motions() {
+        let mut pane = pane_with_line("   indented text  ");
+        pane.copy_cursor = (0, 8);
+        pane.move_cursor_line_end();
+        assert_eq!(pane.copy_cursor, (0, 15));
+        pane.move_cursor_first_non_blank();
+        assert_eq!(pane.copy_cursor, (0, 3));
+        pane.move_cursor_line_start();
+        assert_eq!(pane.copy_cursor, (0, 0));
+    }
+
+    #[test]
+    fn horizontal_moves_skip_wide_char_continuation() {
+        let mut pane = pane_with_line("a日本b");
+        pane.move_cursor_right();
+        assert_eq!(pane.copy_cursor, (0, 1)); // 「日」
+        pane.move_cursor_right();
+        assert_eq!(pane.copy_cursor, (0, 3)); // 「本」
+        pane.move_cursor_right();
+        assert_eq!(pane.copy_cursor, (0, 5)); // 「b」
+        pane.move_cursor_left();
+        assert_eq!(pane.copy_cursor, (0, 3));
+        pane.move_cursor_left();
+        assert_eq!(pane.copy_cursor, (0, 1));
+        pane.move_cursor_left();
+        assert_eq!(pane.copy_cursor, (0, 0));
+    }
+
+    #[test]
+    fn char_selection_with_wide_chars() {
+        let mut pane = pane_with_line("a日本b");
+        pane.move_cursor_right();
+        pane.toggle_selection(SelectionKind::Char);
+        pane.move_cursor_right();
+        assert_eq!(pane.selected_text(), "日本");
+    }
+
+    #[test]
+    fn vertical_move_snaps_to_wide_char_head() {
+        let mut pane = pane_with_line("abcd\r\n日本");
+        pane.copy_cursor = (0, 3);
+        pane.move_cursor_down();
+        assert_eq!(pane.copy_cursor, (1, 2)); // 「本」の前半セル
     }
 }

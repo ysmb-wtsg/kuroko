@@ -24,7 +24,7 @@ use ratatui::crossterm::execute;
 use ratatui::crossterm::terminal::supports_keyboard_enhancement;
 use ratatui::layout::Rect;
 
-use kuroko_agent::{AgentPane, BuiltinProvider};
+use kuroko_agent::{AgentPane, OpenSession, SessionListPane, SessionStart};
 use kuroko_core::layout::SplitDirection;
 use kuroko_core::{Action, Direction, FilePromptKind, LayoutNode, Pane, PaneId, SideContent};
 use kuroko_filetree::FileTreePane;
@@ -72,8 +72,14 @@ pub struct App {
     // --- メインタブ ---
     /// メインペインのタブ管理
     main_tabs: TabManager,
-    /// 新規タブ生成時に使用するエージェントプロバイダー
-    tab_provider: BuiltinProvider,
+
+    // --- セッション一覧サイドバー（左） ---
+    /// セッション一覧ペインのID（初回トグル時に生成）
+    sessions_id: Option<PaneId>,
+    /// セッション一覧サイドバーの表示状態
+    sessions_visible: bool,
+    /// セッション一覧サイドバーの幅比率（0.0〜1.0、左側の割合）
+    sessions_ratio: f32,
 
     // --- サイドパネル（右） ---
     /// サイドパネルに表示中のサブパネル（Noneなら非表示）
@@ -86,7 +92,7 @@ pub struct App {
     git_panel_id: Option<PaneId>,
     /// Gitパネルで起動するツール名（lazygit, tig, gitui等）
     git_tool: String,
-    /// エディタ起動コマンド（設定 `krk.opt.editor`。未設定ならNoneで$EDITOR/vimにフォールバック）
+    /// エディタ起動コマンド（設定 `krk.opt.editor`。未設定ならNoneで$VISUAL/$EDITOR/nvim/vimにフォールバック）
     editor_cmd: Option<String>,
     /// 外部ファイラ起動コマンド（設定 `krk.opt.file_manager`。未設定/"builtin"ならNoneで内蔵ツリーを使う）
     file_manager: Option<String>,
@@ -148,7 +154,7 @@ impl App {
             .and_then(|lua| lua.get_opt_string("git_tool"))
             .unwrap_or_else(|| "lazygit".to_string());
 
-        // エディタ起動コマンド（設定があれば取得。なければNoneのまま$EDITOR/vimへフォールバック）
+        // エディタ起動コマンド（設定があれば取得。なければNoneのまま$VISUAL/$EDITOR/nvim/vimへフォールバック）
         let editor_cmd = lua_runtime
             .as_ref()
             .and_then(|lua| lua.get_opt_string("editor"))
@@ -180,15 +186,18 @@ impl App {
             .unwrap_or_else(|| "claude-code".to_string());
 
         let main_id = PaneId(0);
-        let tab_provider = match main_pane_setting.as_str() {
-            "codex" => BuiltinProvider::Codex,
-            _ => BuiltinProvider::ClaudeCode,
-        };
+        // 未知の値（廃止済みの "codex" 等）は警告したうえで Claude Code にフォールバックする
+        let main_pane_warning = (!matches!(main_pane_setting.as_str(), "claude-code" | "terminal"))
+            .then(|| {
+                format!(
+                    "Unknown krk.opt.main_pane \"{main_pane_setting}\". Using \"claude-code\" (supported: \"claude-code\", \"terminal\")"
+                )
+            });
         let main_pane: Box<dyn Pane> = match main_pane_setting.as_str() {
             "terminal" => Box::new(TerminalPane::new(main_id, 80, 24, pty_tx.clone())),
             _ => Box::new(AgentPane::new(
                 main_id,
-                &tab_provider,
+                SessionStart::new_session(),
                 80,
                 24,
                 pty_tx.clone(),
@@ -215,7 +224,9 @@ impl App {
             notify_enabled,
             notify_message,
             main_tabs: TabManager::with_initial(main_id),
-            tab_provider,
+            sessions_id: None,
+            sessions_visible: false,
+            sessions_ratio: saved_session.sessions_ratio,
             side_content: None,
             side_ratio: saved_session.side_ratio,
             file_tree_id: None,
@@ -228,7 +239,11 @@ impl App {
             bottom_terminal_tabs: TabManager::new(),
         };
 
-        // Lua初期化エラーがあれば通知する
+        if let Some(warning) = main_pane_warning {
+            app.overlay
+                .set_status_message_with_level(warning, MessageLevel::Warn);
+        }
+        // Lua初期化エラーがあれば通知する（警告より優先して表示する）
         if let Some(err) = lua_init_error {
             app.overlay
                 .set_status_message_with_level(err, MessageLevel::Error);
@@ -244,6 +259,12 @@ impl App {
         }
         if saved_session.bottom_visible {
             app.dispatch_action(Action::ToggleTerminal);
+        }
+        if saved_session.sessions_visible {
+            // サイドバーの復元ではフォーカスを奪わない
+            let focused = app.focused;
+            app.dispatch_action(Action::ToggleSessions);
+            app.focused = focused;
         }
 
         app
@@ -312,6 +333,8 @@ impl App {
             side_ratio: self.side_ratio,
             bottom_visible: self.bottom_visible,
             bottom_ratio: self.bottom_ratio,
+            sessions_visible: self.sessions_visible,
+            sessions_ratio: self.sessions_ratio,
         });
 
         Ok(())
@@ -555,6 +578,12 @@ impl App {
             Action::ToggleGitPanel => {
                 self.toggle_side(SideContent::Git);
             }
+            Action::ToggleSessions => {
+                self.toggle_sessions();
+            }
+            Action::ResumeSession { id, title } => {
+                self.resume_session(id, title);
+            }
             Action::NewTab => {
                 self.new_tab();
             }
@@ -663,17 +692,19 @@ impl App {
     }
 
     /// エディタ起動コマンドを解決する。
-    /// 優先順位: 設定 `krk.opt.editor` → 環境変数 `$EDITOR` → `vim`。
+    /// 優先順位: 設定 `krk.opt.editor` → `$VISUAL` → `$EDITOR` → `nvim`（PATH上にあれば）→ `vim`。
     /// 値は空白区切りでプログラムと引数に分割する（例: "nvim -u NONE"）。
     ///
     /// @returns (プログラム名, 追加引数のリスト)
     fn resolve_editor(&self) -> (String, Vec<String>) {
-        let raw = self
-            .editor_cmd
-            .clone()
-            .or_else(|| std::env::var("EDITOR").ok())
-            .filter(|s| !s.trim().is_empty())
-            .unwrap_or_else(|| "vim".to_string());
+        let raw = choose_editor(
+            [
+                self.editor_cmd.clone(),
+                std::env::var("VISUAL").ok(),
+                std::env::var("EDITOR").ok(),
+            ],
+            |program| which::which(program).is_ok(),
+        );
         parse_command(&raw)
     }
 
@@ -696,7 +727,7 @@ impl App {
     }
 
     /// 指定ファイルを外部エディタで開き、フローティングダイアログとして表示する。
-    /// エディタは設定→$EDITOR→vimの順で解決し、PTY上で起動する。
+    /// エディタは設定→$VISUAL→$EDITOR→nvim→vimの順で解決し、PTY上で起動する。
     /// PTYプロセスが終了するとダイアログは自動的に閉じる（drain_pty_messages参照）。
     ///
     /// @param path - 編集対象のファイルパス
@@ -766,6 +797,102 @@ impl App {
             }
         }
         self.rebuild_layout();
+    }
+
+    /// セッション一覧サイドバー（左）の表示/非表示を切り替える。
+    /// 初回はペインを生成する。表示時はサイドバーにフォーカスを移す。
+    fn toggle_sessions(&mut self) {
+        if self.sessions_id.is_none() {
+            let new_id = self.alloc_pane_id();
+            let cwd = std::env::current_dir().unwrap_or_else(|_| "/".into());
+            self.panes
+                .insert(new_id, Box::new(SessionListPane::new(new_id, cwd)));
+            self.sessions_id = Some(new_id);
+        }
+        self.sessions_visible = !self.sessions_visible;
+        if self.sessions_visible {
+            if let Some(id) = self.sessions_id {
+                self.focused = id;
+            }
+            self.rebuild_layout();
+        } else {
+            self.rebuild_layout();
+            self.focus_main_if_hidden();
+        }
+    }
+
+    /// Claude Code の過去セッションを再開する。
+    /// 既にそのセッションを開いているタブがあればそこへ切り替え、なければ
+    /// `claude --resume` を起動する新しいタブを追加してセッションタイトルをタブ名にする。
+    ///
+    /// @param id - セッションID
+    /// @param title - タブ名に使うセッションタイトル
+    fn resume_session(&mut self, id: String, title: String) {
+        let existing = self.main_tabs.tabs().iter().position(|pane_id| {
+            self.panes
+                .get(pane_id)
+                .and_then(|p| p.as_any().downcast_ref::<AgentPane>())
+                .is_some_and(|agent| agent.session_id() == id)
+        });
+        if let Some(index) = existing {
+            self.select_tab(index);
+            return;
+        }
+        let new_id = self.alloc_pane_id();
+        let pane = AgentPane::new(
+            new_id,
+            SessionStart::Resume(id),
+            80,
+            24,
+            self.pty_tx.clone(),
+        );
+        self.panes.insert(new_id, Box::new(pane));
+        self.main_tabs.add(new_id);
+        self.main_tabs.rename_active(truncate_title(&title, 24));
+        self.focused = new_id;
+        self.rebuild_layout();
+    }
+
+    /// セッション一覧サイドバーへ、開いているメインタブの情報を渡す。
+    /// 描画の直前に毎フレーム呼ぶ（タブ名・エージェント状態の変化を反映するため）。
+    pub(super) fn sync_session_list(&mut self) {
+        if !self.sessions_visible {
+            return;
+        }
+        let Some(list_id) = self.sessions_id else {
+            return;
+        };
+        let active = self.main_tabs.active_index();
+        let names = self.main_tabs.names();
+        let open: Vec<OpenSession> = self
+            .main_tabs
+            .tabs()
+            .iter()
+            .enumerate()
+            .map(|(i, pane_id)| {
+                let pane = self.panes.get(pane_id);
+                let agent = pane.and_then(|p| p.as_any().downcast_ref::<AgentPane>());
+                let name = names
+                    .get(i)
+                    .and_then(|n| n.clone())
+                    .or_else(|| pane.map(|p| p.title().to_string()))
+                    .unwrap_or_default();
+                OpenSession {
+                    tab_index: i,
+                    name: format!("{}: {name}", i + 1),
+                    session_id: agent.map(|a| a.session_id().to_string()),
+                    status: agent.map(AgentPane::status),
+                    active: i == active,
+                }
+            })
+            .collect();
+        if let Some(list) = self
+            .panes
+            .get_mut(&list_id)
+            .and_then(|p| p.as_any_mut().downcast_mut::<SessionListPane>())
+        {
+            list.set_open_sessions(open);
+        }
     }
 
     /// ボトムターミナルの表示/非表示を切り替える。
@@ -923,6 +1050,19 @@ impl App {
             center
         };
 
+        // セッション一覧サイドバー + 残り（垂直分割、サイドバーは左）
+        if self.sessions_visible
+            && let Some(sessions_id) = self.sessions_id
+        {
+            let rest = std::mem::replace(&mut self.layout, LayoutNode::Leaf(sessions_id));
+            self.layout = LayoutNode::Split {
+                direction: SplitDirection::Vertical,
+                ratio: self.sessions_ratio,
+                first: Box::new(LayoutNode::Leaf(sessions_id)),
+                second: Box::new(rest),
+            };
+        }
+
         // フォーカスが可視ペインに含まれることを保証
         let visible_ids = self.layout.pane_ids();
         if !visible_ids.contains(&self.focused) {
@@ -933,6 +1073,17 @@ impl App {
     /// パネルの分割比率を変更する。
     fn resize_panel(&mut self, direction: Direction, delta: f32) {
         match direction {
+            Direction::Left | Direction::Right
+                if self.sessions_visible && Some(self.focused) == self.sessions_id =>
+            {
+                let adjust = if direction == Direction::Right {
+                    delta
+                } else {
+                    -delta
+                };
+                self.sessions_ratio = (self.sessions_ratio + adjust).clamp(0.1, 0.5);
+                self.rebuild_layout();
+            }
             Direction::Left | Direction::Right => {
                 if self.side_content.is_some() {
                     let adjust = if direction == Direction::Left {
@@ -961,7 +1112,13 @@ impl App {
     /// 新しいエージェントタブを追加し、アクティブに切り替える
     fn new_tab(&mut self) {
         let new_id = self.alloc_pane_id();
-        let pane = AgentPane::new(new_id, &self.tab_provider, 80, 24, self.pty_tx.clone());
+        let pane = AgentPane::new(
+            new_id,
+            SessionStart::new_session(),
+            80,
+            24,
+            self.pty_tx.clone(),
+        );
         self.panes.insert(new_id, Box::new(pane));
         self.main_tabs.add(new_id);
         self.focused = new_id;
@@ -996,7 +1153,8 @@ impl App {
 
     /// インデックス指定でタブを選択する（0始まり）
     fn select_tab(&mut self, index: usize) {
-        if index >= self.main_tabs.len() || index == self.main_tabs.active_index() {
+        // アクティブタブを選んだ場合もフォーカスはメインへ移す（セッション一覧からの選択時）
+        if index >= self.main_tabs.len() {
             return;
         }
         self.main_tabs.select(index);
@@ -1079,6 +1237,36 @@ fn dirs_home() -> PathBuf {
     std::env::var("HOME")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("/"))
+}
+
+/// タイトルを指定文字数に切り詰める（超える場合は末尾に「…」を付ける）
+fn truncate_title(title: &str, max_chars: usize) -> String {
+    if title.chars().count() <= max_chars {
+        return title.to_string();
+    }
+    let mut s: String = title.chars().take(max_chars.saturating_sub(1)).collect();
+    s.push('…');
+    s
+}
+
+/// エディタ起動コマンド文字列を決める。
+/// 明示指定（設定・環境変数）を先頭から順に採用し、どれも無ければ
+/// `nvim` がPATH上にあればそれを、無ければ `vim` を使う。
+/// 素のvim（macOS標準はvimrc無しでシンタックスハイライトも無効）より、
+/// ユーザーが設定済みであることが多いnvimを優先するため。
+///
+/// @param explicit - 優先順に並べた明示指定（None・空文字は無視）
+/// @param exists - プログラムがPATH上に存在するかを判定する関数
+/// @returns エディタ起動コマンド文字列
+fn choose_editor<const N: usize>(
+    explicit: [Option<String>; N],
+    exists: impl Fn(&str) -> bool,
+) -> String {
+    explicit
+        .into_iter()
+        .flatten()
+        .find(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| if exists("nvim") { "nvim" } else { "vim" }.to_string())
 }
 
 /// コマンド文字列をプログラム名と引数リストに分割する。

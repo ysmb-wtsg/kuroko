@@ -49,6 +49,7 @@ To leave global mode, press either `Ctrl+g` or `Esc`.
 | `t` | Toggle terminal panel |
 | `f` | Toggle file tree panel |
 | `g` | Toggle git panel |
+| `s` | Toggle session list sidebar (open tabs + past Claude Code sessions) |
 | `Enter` | Copy mode (terminal / agent pane) |
 | `:` | Command palette |
 | `q` | Quit |
@@ -72,7 +73,7 @@ Place a config file at `~/.config/krk/init.lua` and it is loaded on startup.
 krk.pane.toggle(type)      -- Toggle a panel ("terminal", "files")
 krk.pane.focus(direction)  -- Move focus ("next", "prev", "left", "right", "up", "down")
 krk.opt.leader             -- Leader key
-krk.opt.main_pane          -- Main pane type ("claude-code", "codex", "terminal")
+krk.opt.main_pane          -- Main pane type ("claude-code", "terminal")
 krk.opt.git_tool           -- Git panel tool ("lazygit", "tig", "gitui", etc.)
 krk.opt.file_manager       -- File manager ("yazi", etc. Unset/"builtin" uses the built-in tree)
 krk.opt.notify             -- Desktop notification when an agent waits for input (default: true)
@@ -128,16 +129,6 @@ Toggle it with `krk.opt.notify` (default: `true`), and set the body template wit
 ```lua
 krk.opt.notify = true
 krk.opt.notify_message = "{title}: waiting for input"
-```
-
-### Agents
-
-Choose the agent to place in the main pane with `krk.opt.main_pane`.
-
-![codex](docs/images/codex.png)
-
-```lua
-krk.opt.main_pane = "codex"
 ```
 
 ## 💡 Inspiration

@@ -7,7 +7,7 @@ use ratatui::crossterm::event::{
 
 use kuroko_agent::AgentPane;
 use kuroko_core::{Action, AppEvent, Direction, FilePromptKind, PaneType};
-use kuroko_terminal::TerminalPane;
+use kuroko_terminal::{SelectionKind, TerminalPane};
 
 use super::App;
 use super::overlay::CommandPalette;
@@ -69,7 +69,7 @@ impl App {
                         // コピーモードに入ってからスクロール
                         self.dispatch_action(Action::EnterCopyMode);
                     }
-                    self.copy_mode_scroll_up(3);
+                    self.with_focused_terminal(|tp| tp.scroll_up(3));
                 }
                 vec![]
             }
@@ -90,7 +90,7 @@ impl App {
                     })
                     .unwrap_or(false);
                 if in_copy_mode {
-                    self.copy_mode_scroll_down(3);
+                    self.with_focused_terminal(|tp| tp.scroll_down(3));
                     // 最新画面に到達したらコピーモードを終了
                     let at_bottom = self
                         .panes
@@ -388,6 +388,7 @@ impl App {
             KeyCode::Char('t') => vec![Action::ToggleTerminal],
             KeyCode::Char('f') => vec![Action::ToggleFileTree],
             KeyCode::Char('g') => vec![Action::ToggleGitPanel],
+            KeyCode::Char('s') => vec![Action::ToggleSessions],
 
             // メインタブ操作（メインタブにフォーカスがある場合のみ有効）
             KeyCode::Char('n') if is_main_tab => vec![Action::NewTab],
@@ -448,54 +449,35 @@ impl App {
     }
 
     /// コピーモード中のキー処理。
-    /// hjkl でカーソル移動、Ctrl-d/u でハーフページスクロール、
-    /// v で選択開始/解除、y で選択テキストをコピー、q/Esc で終了。
+    /// hjkl/w/b/e/0/^/$ でカーソル移動、Ctrl-d/u でハーフページスクロール、
+    /// v（文字単位）/V（行単位）で選択開始・切替・解除、y で選択テキストをコピー、q/Esc で終了。
     pub(super) fn handle_copy_mode_key(&mut self, key: KeyEvent) -> Vec<Action> {
         if key.kind != KeyEventKind::Press {
             return vec![];
         }
 
+        let half = (self.last_area.height / 2).max(1) as usize;
+        let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         match key.code {
-            // カーソル移動（兼スクロール：画面端に達すると自動スクロール）
-            KeyCode::Char('j') | KeyCode::Down => {
-                self.copy_mode_cursor_down();
-            }
-            KeyCode::Char('k') | KeyCode::Up => {
-                self.copy_mode_cursor_up();
-            }
-            KeyCode::Char('h') | KeyCode::Left => {
-                self.copy_mode_cursor_left();
-            }
-            KeyCode::Char('l') | KeyCode::Right => {
-                self.copy_mode_cursor_right();
-            }
             // ハーフページスクロール
-            KeyCode::Char('d') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let half = (self.last_area.height / 2).max(1) as usize;
-                self.copy_mode_scroll_down(half);
+            KeyCode::Char('d') if ctrl => {
+                self.with_focused_terminal(|tp| tp.scroll_down(half));
             }
-            KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                let half = (self.last_area.height / 2).max(1) as usize;
-                self.copy_mode_scroll_up(half);
+            KeyCode::Char('u') if ctrl => {
+                self.with_focused_terminal(|tp| tp.scroll_up(half));
             }
-            // 先頭/末尾ジャンプ
-            KeyCode::Char('g') => {
-                self.copy_mode_scroll_to_top();
-            }
-            KeyCode::Char('G') => {
-                self.copy_mode_scroll_to_bottom();
-            }
-            // テキスト選択の開始/解除
-            KeyCode::Char('v') => {
-                self.copy_mode_toggle_selection();
-            }
-            // コピー（選択範囲がなければ画面全体）
+            // コピー（選択範囲がなければカーソル行）
             KeyCode::Char('y') => {
-                if let Some(text) = self.copy_mode_selected_text() {
+                if let Some(text) = self.with_focused_terminal(|tp| tp.selected_text()) {
                     let line_count = text.lines().count();
+                    let message = if line_count > 1 {
+                        format!("Copied {line_count} lines")
+                    } else {
+                        format!("Copied {} chars", text.trim_end().chars().count())
+                    };
                     return vec![
                         Action::CopyToClipboard(text),
-                        Action::Notify(format!("Copied {line_count} lines")),
+                        Action::Notify(message),
                         Action::ExitCopyMode,
                     ];
                 }
@@ -506,123 +488,55 @@ impl App {
             KeyCode::Enter | KeyCode::Char('q') | KeyCode::Esc => {
                 return vec![Action::ExitCopyMode];
             }
+            KeyCode::Char(c) => {
+                self.with_focused_terminal(|tp| match c {
+                    // カーソル移動（兼スクロール：画面端に達すると自動スクロール）
+                    'j' => tp.move_cursor_down(),
+                    'k' => tp.move_cursor_up(),
+                    'h' => tp.move_cursor_left(),
+                    'l' => tp.move_cursor_right(),
+                    // 単語移動・行内移動
+                    'w' => tp.move_word_forward(),
+                    'b' => tp.move_word_backward(),
+                    'e' => tp.move_word_end(),
+                    '0' => tp.move_cursor_line_start(),
+                    '^' => tp.move_cursor_first_non_blank(),
+                    '$' => tp.move_cursor_line_end(),
+                    // 先頭/末尾ジャンプ
+                    'g' => tp.scroll_to_top(),
+                    'G' => tp.scroll_to_bottom(),
+                    // 選択の開始/切替/解除（v: 文字単位、V: 行単位）
+                    'v' => tp.toggle_selection(SelectionKind::Char),
+                    'V' => tp.toggle_selection(SelectionKind::Line),
+                    _ => {}
+                });
+            }
+            KeyCode::Down => {
+                self.with_focused_terminal(|tp| tp.move_cursor_down());
+            }
+            KeyCode::Up => {
+                self.with_focused_terminal(|tp| tp.move_cursor_up());
+            }
+            KeyCode::Left => {
+                self.with_focused_terminal(|tp| tp.move_cursor_left());
+            }
+            KeyCode::Right => {
+                self.with_focused_terminal(|tp| tp.move_cursor_right());
+            }
             _ => {}
         }
         vec![]
     }
 
-    /// コピーモード: 上方向（過去）へスクロールする。
-    /// フォーカス中のペインがTerminalPaneまたはAgentPaneの場合に委譲する。
-    fn copy_mode_scroll_up(&mut self, lines: usize) {
-        if let Some(pane) = self.panes.get_mut(&self.focused) {
-            if let Some(tp) = pane.as_any_mut().downcast_mut::<TerminalPane>() {
-                tp.scroll_up(lines);
-            } else if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
-                ap.scroll_up(lines);
-            }
+    /// コピーモード: フォーカス中のペインがTerminalPane/AgentPaneなら、
+    /// そのターミナル本体に対して操作を適用する。
+    fn with_focused_terminal<R>(&mut self, f: impl FnOnce(&mut TerminalPane) -> R) -> Option<R> {
+        let pane = self.panes.get_mut(&self.focused)?.as_any_mut();
+        if pane.is::<TerminalPane>() {
+            return pane.downcast_mut::<TerminalPane>().map(f);
         }
-    }
-
-    /// コピーモード: 下方向（最新）へスクロールする。
-    /// フォーカス中のペインがTerminalPaneまたはAgentPaneの場合に委譲する。
-    fn copy_mode_scroll_down(&mut self, lines: usize) {
-        if let Some(pane) = self.panes.get_mut(&self.focused) {
-            if let Some(tp) = pane.as_any_mut().downcast_mut::<TerminalPane>() {
-                tp.scroll_down(lines);
-            } else if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
-                ap.scroll_down(lines);
-            }
-        }
-    }
-
-    /// コピーモード: スクロールバッファの先頭まで移動する。
-    fn copy_mode_scroll_to_top(&mut self) {
-        if let Some(pane) = self.panes.get_mut(&self.focused) {
-            if let Some(tp) = pane.as_any_mut().downcast_mut::<TerminalPane>() {
-                tp.scroll_to_top();
-            } else if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
-                ap.scroll_to_top();
-            }
-        }
-    }
-
-    /// コピーモード: スクロールオフセットを0（最新画面）にリセットする。
-    fn copy_mode_scroll_to_bottom(&mut self) {
-        if let Some(pane) = self.panes.get_mut(&self.focused) {
-            if let Some(tp) = pane.as_any_mut().downcast_mut::<TerminalPane>() {
-                tp.scroll_to_bottom();
-            } else if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
-                ap.scroll_to_bottom();
-            }
-        }
-    }
-
-    /// コピーモード: カーソルを上に移動する
-    fn copy_mode_cursor_up(&mut self) {
-        if let Some(pane) = self.panes.get_mut(&self.focused) {
-            if let Some(tp) = pane.as_any_mut().downcast_mut::<TerminalPane>() {
-                tp.move_cursor_up();
-            } else if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
-                ap.move_cursor_up();
-            }
-        }
-    }
-
-    /// コピーモード: カーソルを下に移動する
-    fn copy_mode_cursor_down(&mut self) {
-        if let Some(pane) = self.panes.get_mut(&self.focused) {
-            if let Some(tp) = pane.as_any_mut().downcast_mut::<TerminalPane>() {
-                tp.move_cursor_down();
-            } else if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
-                ap.move_cursor_down();
-            }
-        }
-    }
-
-    /// コピーモード: カーソルを左に移動する
-    fn copy_mode_cursor_left(&mut self) {
-        if let Some(pane) = self.panes.get_mut(&self.focused) {
-            if let Some(tp) = pane.as_any_mut().downcast_mut::<TerminalPane>() {
-                tp.move_cursor_left();
-            } else if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
-                ap.move_cursor_left();
-            }
-        }
-    }
-
-    /// コピーモード: カーソルを右に移動する
-    fn copy_mode_cursor_right(&mut self) {
-        if let Some(pane) = self.panes.get_mut(&self.focused) {
-            if let Some(tp) = pane.as_any_mut().downcast_mut::<TerminalPane>() {
-                tp.move_cursor_right();
-            } else if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
-                ap.move_cursor_right();
-            }
-        }
-    }
-
-    /// コピーモード: テキスト選択の開始/解除をトグルする
-    fn copy_mode_toggle_selection(&mut self) {
-        if let Some(pane) = self.panes.get_mut(&self.focused) {
-            if let Some(tp) = pane.as_any_mut().downcast_mut::<TerminalPane>() {
-                tp.toggle_selection();
-            } else if let Some(ap) = pane.as_any_mut().downcast_mut::<AgentPane>() {
-                ap.toggle_selection();
-            }
-        }
-    }
-
-    /// コピーモード: 選択範囲のテキストを取得する（選択なしなら画面全体）
-    fn copy_mode_selected_text(&mut self) -> Option<String> {
-        let pane = self.panes.get_mut(&self.focused)?;
-        pane.as_any_mut()
-            .downcast_mut::<TerminalPane>()
-            .map(|tp| tp.selected_text())
-            .or_else(|| {
-                pane.as_any_mut()
-                    .downcast_mut::<AgentPane>()
-                    .map(|ap| ap.selected_text())
-            })
+        pane.downcast_mut::<AgentPane>()
+            .map(|ap| f(ap.terminal_mut()))
     }
 
     /// コマンドパレット表示中のキー処理。

@@ -9,7 +9,7 @@
 -- Leader key. Prefix for "<leader>..." keybindings in the global mode.
 krk.opt.leader = " "
 
--- Main pane shown on startup ("claude-code", "codex", "terminal").
+-- Main pane shown on startup ("claude-code", "terminal").
 krk.opt.main_pane = "claude-code"
 
 -- Git panel tool ("lazygit", "tig", "gitui", etc.). Must be installed.

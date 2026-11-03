@@ -23,6 +23,8 @@ pub enum PaneType {
     Agent,
     /// ファイルツリー
     FileTree,
+    /// セッション一覧サイドバー
+    Sessions,
 }
 
 /// サイドパネル（右）に表示するサブパネルの種別

@@ -888,6 +888,8 @@ dependencies = [
  "kuroko-terminal",
  "portable-pty",
  "ratatui",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]

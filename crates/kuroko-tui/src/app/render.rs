@@ -22,6 +22,7 @@ use super::tab_manager::TabManager;
 impl App {
     /// ターミナルにフレームを描画する
     pub(super) fn draw(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
+        self.sync_session_list();
         terminal.draw(|frame| {
             let area = frame.area();
             self.last_area = area;
@@ -366,7 +367,7 @@ impl App {
             let bg = match pane.pane_type() {
                 PaneType::Agent => t.accent_primary,
                 PaneType::Terminal => t.accent_positive,
-                PaneType::FileTree => t.accent_secondary,
+                PaneType::FileTree | PaneType::Sessions => t.accent_secondary,
             };
             spans.push(Span::styled(
                 format!(" {} ", pane.title()),
@@ -451,7 +452,7 @@ impl App {
             ("h/j/k/l", "Focus pane left/down/up/right"),
             ("Tab / S-Tab", "Focus next / previous pane"),
             ("H/J/K/L", "Resize pane"),
-            ("t / f / g", "Toggle terminal / files / git panel"),
+            ("t / f / g / s", "Toggle terminal / files / git / sessions"),
             ("n", "New tab"),
             ("x or w", "Close tab"),
             ("r", "Rename tab"),
@@ -477,11 +478,17 @@ impl App {
             ("v", "Multi-select (Space:toggle d:delete)"),
             ("S-h", "Toggle hidden files"),
             ("S-r", "Reload tree"),
+            ("", "Sessions sidebar (focused, direct input)"),
+            ("j/k", "Move cursor"),
+            ("Enter / l", "Switch to tab / resume session"),
+            ("n / r", "New tab / reload history"),
             ("", "Copy mode"),
             ("h/j/k/l", "Move cursor"),
+            ("w / b / e", "Next word / prev word / word end"),
+            ("0 / ^ / $", "Line start / first char / line end"),
             ("C-d / C-u", "Half page down / up"),
             ("g / G", "Scroll to top / bottom"),
-            ("v", "Start / clear selection"),
+            ("v / V", "Select chars / lines (again: clear)"),
             ("y", "Copy selection and exit"),
             ("Enter / q / Esc", "Exit copy mode"),
         ];

@@ -670,3 +670,110 @@ fn editor_dialog_rect_is_centered_and_within_area() {
     assert_eq!(dialog.x, (area.width - dialog.width) / 2);
     assert_eq!(dialog.y, (area.height - dialog.height) / 2);
 }
+
+#[test]
+fn choose_editor_prefers_explicit_setting() {
+    let cmd = super::choose_editor([Some("hx".to_string()), Some("emacs".to_string())], |_| {
+        true
+    });
+    assert_eq!(cmd, "hx");
+}
+
+#[test]
+fn choose_editor_skips_empty_values() {
+    let cmd = super::choose_editor(
+        [None, Some("  ".to_string()), Some("nano".to_string())],
+        |_| true,
+    );
+    assert_eq!(cmd, "nano");
+}
+
+#[test]
+fn choose_editor_falls_back_to_nvim_when_available() {
+    let cmd = super::choose_editor([None, None], |p| p == "nvim");
+    assert_eq!(cmd, "nvim");
+}
+
+#[test]
+fn choose_editor_falls_back_to_vim_without_nvim() {
+    let cmd = super::choose_editor([None, None], |_| false);
+    assert_eq!(cmd, "vim");
+}
+
+// ---------------------------------------------------------------------------
+// セッション一覧サイドバー
+// ---------------------------------------------------------------------------
+
+#[test]
+fn toggle_sessions_shows_sidebar_on_left_and_focuses_it() {
+    let mut app = App::new();
+    app.dispatch_action(Action::ToggleSessions);
+    let sessions_id = app.sessions_id.expect("sessions pane is created");
+    assert_eq!(app.focused, sessions_id);
+    assert_eq!(app.layout.pane_ids().first(), Some(&sessions_id));
+    assert_eq!(
+        app.panes.get(&sessions_id).map(|p| p.pane_type()),
+        Some(PaneType::Sessions)
+    );
+
+    app.dispatch_action(Action::ToggleSessions);
+    assert!(!app.layout.pane_ids().contains(&sessions_id));
+    assert_eq!(app.focused, app.main_active_id());
+}
+
+#[test]
+fn global_s_toggles_sessions() {
+    let mut app = App::new();
+    app.global_mode = true;
+    let actions = app.handle_global_key(press_key(KeyCode::Char('s')));
+    assert!(actions.iter().any(|a| matches!(a, Action::ToggleSessions)));
+}
+
+#[test]
+fn new_tabs_get_unique_session_ids() {
+    let mut app = App::new();
+    app.dispatch_action(Action::NewTab);
+    let ids: Vec<String> = app
+        .main_tabs
+        .tabs()
+        .iter()
+        .filter_map(|id| {
+            app.panes
+                .get(id)
+                .and_then(|p| p.as_any().downcast_ref::<kuroko_agent::AgentPane>())
+                .map(|a| a.session_id().to_string())
+        })
+        .collect();
+    assert_eq!(ids.len(), 2);
+    assert_ne!(ids[0], ids[1]);
+}
+
+#[test]
+fn resume_session_opens_named_tab_then_reuses_it() {
+    let mut app = App::new();
+    let resume = || Action::ResumeSession {
+        id: "11111111-2222-3333-4444-555555555555".to_string(),
+        title: "Fix the login bug in the auth middleware".to_string(),
+    };
+    app.dispatch_action(resume());
+    assert_eq!(app.main_tabs.len(), 2);
+    assert_eq!(app.main_tabs.active_index(), 1);
+    let name = app.main_tabs.names()[1].clone().unwrap();
+    assert_eq!(name.chars().count(), 24);
+    assert!(name.ends_with('…'));
+
+    // 別タブへ移ってから同じセッションを再開すると、既存タブへ切り替わるだけ
+    app.dispatch_action(Action::SelectTab(0));
+    app.dispatch_action(resume());
+    assert_eq!(app.main_tabs.len(), 2);
+    assert_eq!(app.main_tabs.active_index(), 1);
+    assert_eq!(app.focused, app.main_active_id());
+}
+
+#[test]
+fn select_active_tab_moves_focus_to_main() {
+    let mut app = App::new();
+    app.dispatch_action(Action::ToggleSessions);
+    app.dispatch_action(Action::SelectTab(0));
+    assert_eq!(app.focused, app.main_active_id());
+}

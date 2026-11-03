@@ -451,6 +451,11 @@ impl CommandPalette {
                 action: Action::ToggleGitPanel,
             },
             CommandEntry {
+                name: "sessions".to_string(),
+                description: "Toggle session list sidebar".to_string(),
+                action: Action::ToggleSessions,
+            },
+            CommandEntry {
                 name: "new-tab".to_string(),
                 description: "Open new agent tab".to_string(),
                 action: Action::NewTab,

@@ -49,6 +49,7 @@ krk
 | `t` | ターミナルパネルのトグル |
 | `f` | ファイルツリーパネルのトグル |
 | `g` | git パネルのトグル |
+| `s` | セッション一覧サイドバーのトグル（開いているタブ + Claude Code の過去セッション） |
 | `Enter` | コピーモード（ターミナル / エージェントペイン） |
 | `:` | コマンドパレット |
 | `q` | 終了 |
@@ -72,7 +73,7 @@ krk
 krk.pane.toggle(type)      -- パネルのトグル ("terminal", "files")
 krk.pane.focus(direction)  -- フォーカス移動 ("next", "prev", "left", "right", "up", "down")
 krk.opt.leader             -- リーダーキー
-krk.opt.main_pane          -- メインペインの種類 ("claude-code", "codex", "terminal")
+krk.opt.main_pane          -- メインペインの種類 ("claude-code", "terminal")
 krk.opt.git_tool           -- git パネルのツール ("lazygit", "tig", "gitui" など)
 krk.opt.file_manager       -- ファイラ ("yazi" など。未設定/"builtin" で内蔵ツリー)
 krk.opt.notify             -- エージェント入力待ち時のデスクトップ通知 (デフォルト: true)
@@ -128,16 +129,6 @@ krk.opt.git_tool = "tig"
 ```lua
 krk.opt.notify = true
 krk.opt.notify_message = "{title}: 入力待ちです"
-```
-
-### エージェント
-
-`krk.opt.main_pane` でメインペインに据えるエージェントを選びます。
-
-![codex](docs/images/codex.png)
-
-```lua
-krk.opt.main_pane = "codex"
 ```
 
 ## 💡 着想

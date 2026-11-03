@@ -730,6 +730,66 @@ fn global_s_toggles_sessions() {
 }
 
 #[test]
+fn global_oneshot_keys_return_to_direct() {
+    // フォーカス移動・パネルトグル・パレット起動は実行後に直通へ戻る
+    for key in [
+        KeyCode::Char('h'),
+        KeyCode::Char('j'),
+        KeyCode::Char('k'),
+        KeyCode::Char('l'),
+        KeyCode::Tab,
+        KeyCode::BackTab,
+        KeyCode::Char('f'),
+        KeyCode::Char('t'),
+        KeyCode::Char('g'),
+        KeyCode::Char('s'),
+        KeyCode::Char(':'),
+    ] {
+        let mut app = App::new();
+        app.global_mode = true;
+        app.handle_global_key(press_key(key));
+        assert!(!app.global_mode, "{key:?} は直通へ戻るべき");
+    }
+}
+
+#[test]
+fn global_main_tab_oneshot_keys_return_to_direct() {
+    for key in [KeyCode::Char('n'), KeyCode::Char('1'), KeyCode::Char('r')] {
+        let mut app = App::new();
+        assert!(app.main_tabs.contains(&app.focused));
+        app.global_mode = true;
+        app.handle_global_key(press_key(key));
+        assert!(!app.global_mode, "{key:?} は直通へ戻るべき");
+    }
+}
+
+#[test]
+fn global_repeat_keys_stay_in_global_mode() {
+    // リサイズ・タブ順送りは連打のため持続する
+    for key in [
+        KeyCode::Char('H'),
+        KeyCode::Char('J'),
+        KeyCode::Char('K'),
+        KeyCode::Char('L'),
+        KeyCode::Char(']'),
+        KeyCode::Char('['),
+    ] {
+        let mut app = App::new();
+        app.global_mode = true;
+        app.handle_global_key(press_key(key));
+        assert!(app.global_mode, "{key:?} は持続すべき");
+    }
+}
+
+#[test]
+fn global_unknown_key_stays_in_global_mode() {
+    let mut app = App::new();
+    app.global_mode = true;
+    app.handle_global_key(press_key(KeyCode::Char('z')));
+    assert!(app.global_mode);
+}
+
+#[test]
 fn new_tabs_get_unique_session_ids() {
     let mut app = App::new();
     app.dispatch_action(Action::NewTab);

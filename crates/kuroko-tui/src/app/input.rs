@@ -355,7 +355,18 @@ impl App {
         let is_main_tab = self.main_tabs.contains(&self.focused);
         let is_bottom_terminal = self.is_bottom_terminal_focused();
 
-        match key.code {
+        // 単発操作は実行後に直通へ戻る。リサイズ・タブ順送り（連打系）と無効キーは持続する。
+        // Enter（コピーモード）は分岐内で自前で抜ける
+        let has_tab_ops = is_main_tab || is_bottom_terminal;
+        let oneshot = match key.code {
+            KeyCode::Char('h' | 'j' | 'k' | 'l' | 't' | 'f' | 'g' | 's' | ':')
+            | KeyCode::Tab
+            | KeyCode::BackTab => true,
+            KeyCode::Char('n' | 'x' | 'w' | 'r' | '1'..='9') => has_tab_ops,
+            _ => false,
+        };
+
+        let actions = match key.code {
             // 方向フォーカス移動
             KeyCode::Char('h') => vec![Action::FocusDirection(Direction::Left)],
             KeyCode::Char('j') => vec![Action::FocusDirection(Direction::Down)],
@@ -445,7 +456,12 @@ impl App {
             // 終了
             KeyCode::Char('q') => vec![Action::Quit],
             _ => vec![],
+        };
+
+        if oneshot {
+            self.global_mode = false;
         }
+        actions
     }
 
     /// コピーモード中のキー処理。

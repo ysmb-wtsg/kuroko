@@ -38,6 +38,8 @@ krk
 
 Press `Ctrl+g` to enter **global mode**, where you can perform meta operations such as resizing panes and moving focus.
 To leave global mode, press either `Ctrl+g` or `Esc`.
+One-shot operations (focus movement, panel toggles, tab add/close/select, rename, command palette, copy mode) return to direct input automatically.
+Only repeatable keys (`H/J/K/L` resize, `[` / `]` tab cycling) keep global mode active.
 
 ### Global mode keybindings
 

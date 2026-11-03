@@ -8,11 +8,12 @@ mod render;
 pub(crate) mod session;
 mod tab_manager;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
+use std::time::Instant;
 
 use ratatui::DefaultTerminal;
 use ratatui::crossterm::event::{
@@ -34,6 +35,13 @@ use kuroko_terminal::pty_handle::PtyMessage;
 
 use overlay::{EditorOverlay, FileInfo, FilePreview, FilePrompt, MessageLevel, OverlayState};
 use tab_manager::TabManager;
+
+/// エージェントの自動再起動を行う最小稼働時間。これ未満で終了したら起動失敗として再起動しない。
+const AGENT_RESPAWN_MIN_UPTIME: Duration = Duration::from_secs(3);
+
+/// Ctrl+C を2回押してエージェントが終了するまでを「krk ごと終了したい」意図とみなす時間幅。
+/// 2回の押下間隔と、2回目の押下から終了検知までの両方に適用する。
+const CTRL_C_QUIT_WINDOW: Duration = Duration::from_secs(2);
 
 /// アプリケーションのメイン構造体。
 /// パネルスロット方式でレイアウトを管理し、各パネルのトグル表示を制御する。
@@ -62,6 +70,12 @@ pub struct App {
     overlay: OverlayState,
     /// アプリケーション終了フラグ
     should_quit: bool,
+    /// エージェント終了時に自動で新セッションへ置き換えるための最小稼働時間。
+    /// これより短い時間で終了した場合は起動失敗とみなし、再起動ループを避けて残す。
+    respawn_min_uptime: Duration,
+    /// 直通状態で直近に押された Ctrl+C（最大2件）。Claude の Ctrl+C 2回終了を、
+    /// 「krk ごと終了したい」意図として検出するために使う。キーは奪わずPTYへ転送する。
+    recent_ctrl_c: VecDeque<(PaneId, Instant)>,
     /// 直前のフレームの描画領域（方向フォーカス計算用）
     last_area: Rect,
     /// エージェントの入力待ち通知（OSC 9）を出すか（設定 `krk.opt.notify`、デフォルト有効）
@@ -220,6 +234,8 @@ impl App {
             keymap_registry,
             overlay: OverlayState::new(),
             should_quit: false,
+            respawn_min_uptime: AGENT_RESPAWN_MIN_UPTIME,
+            recent_ctrl_c: VecDeque::new(),
             last_area: Rect::default(),
             notify_enabled,
             notify_message,
@@ -371,6 +387,7 @@ impl App {
                             ap.set_pty_dead();
                         }
                     }
+                    self.respawn_exited_agent(pane_id);
                 }
             }
         }
@@ -1115,6 +1132,52 @@ impl App {
         self.main_tabs.add(new_id);
         self.focused = new_id;
         self.rebuild_layout();
+    }
+
+    /// 終了したメインタブのエージェントを、同じ位置の新規セッションに置き換える。
+    /// 起動直後（`respawn_min_uptime` 未満）の終了は起動失敗とみなし、
+    /// 再起動ループを避けて終了済みペインをそのまま残す。
+    fn respawn_exited_agent(&mut self, pane_id: PaneId) {
+        let Some(agent) = self
+            .panes
+            .get(&pane_id)
+            .and_then(|p| p.as_any().downcast_ref::<AgentPane>())
+        else {
+            return;
+        };
+        if !self.main_tabs.contains(&pane_id) {
+            return;
+        }
+        // Ctrl+C 2回で終了した場合は、タブの置き換えではなく krk ごと終了する
+        if self.exited_after_double_ctrl_c(pane_id) {
+            self.should_quit = true;
+            return;
+        }
+        if agent.uptime() < self.respawn_min_uptime {
+            return;
+        }
+        let was_focused = self.focused == pane_id;
+        let new_id = self.spawn_new_agent_pane();
+        self.main_tabs.replace(pane_id, new_id);
+        self.panes.remove(&pane_id);
+        if was_focused {
+            self.focused = new_id;
+        }
+        self.rebuild_layout();
+    }
+
+    /// 直前に対象ペインへ Ctrl+C を2回続けて送っていたかを返す。
+    /// 2回の間隔と、2回目から現在までの経過がともに `CTRL_C_QUIT_WINDOW` 以内なら true。
+    fn exited_after_double_ctrl_c(&self, pane_id: PaneId) -> bool {
+        match (self.recent_ctrl_c.front(), self.recent_ctrl_c.back()) {
+            (Some((first_id, first)), Some((last_id, last))) if self.recent_ctrl_c.len() == 2 => {
+                *first_id == pane_id
+                    && *last_id == pane_id
+                    && last.duration_since(*first) <= CTRL_C_QUIT_WINDOW
+                    && last.elapsed() <= CTRL_C_QUIT_WINDOW
+            }
+            _ => false,
+        }
     }
 
     /// 新規セッションのエージェントペインを生成して `panes` に登録し、そのIDを返す

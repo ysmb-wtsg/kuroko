@@ -27,6 +27,8 @@ pub struct AgentPane {
     idle_notifier: IdleNotifier,
     /// Claude Code のセッションID（起動時に指定したもの）
     session_id: String,
+    /// ペイン生成時刻（起動直後の即時終了を検出するために使う）
+    started_at: Instant,
 }
 
 impl AgentPane {
@@ -54,7 +56,13 @@ impl AgentPane {
             activity: ActivityTracker::new(),
             idle_notifier: IdleNotifier::new(),
             session_id: session.id().to_string(),
+            started_at: Instant::now(),
         }
+    }
+
+    /// ペイン生成からの経過時間を返す
+    pub fn uptime(&self) -> std::time::Duration {
+        self.started_at.elapsed()
     }
 
     /// PTYにバイト列を書き込む

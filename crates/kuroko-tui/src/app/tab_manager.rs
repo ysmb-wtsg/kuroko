@@ -75,6 +75,21 @@ impl TabManager {
         Some(old)
     }
 
+    /// 指定PaneIdのタブを新しいPaneIdに差し替える。
+    /// タブ位置とアクティブ状態は維持し、カスタム名はクリアする。
+    ///
+    /// @param old - 差し替え対象のペインID
+    /// @param new - 新しいペインID
+    /// @returns 差し替えたらtrue（oldが存在しなければfalse）
+    pub fn replace(&mut self, old: PaneId, new: PaneId) -> bool {
+        let Some(index) = self.tabs.iter().position(|id| *id == old) else {
+            return false;
+        };
+        self.tabs[index] = new;
+        self.names[index] = None;
+        true
+    }
+
     /// 次のタブに切り替える（循環）
     pub fn next(&mut self) {
         if self.tabs.len() <= 1 {
@@ -348,6 +363,24 @@ mod tests {
     fn replace_active_on_empty_returns_none() {
         let mut mgr = TabManager::new();
         assert_eq!(mgr.replace_active(PaneId(1)), None);
+    }
+
+    #[test]
+    fn replace_swaps_non_active_tab_keeping_active() {
+        let mut mgr = TabManager::with_initial(PaneId(1));
+        mgr.add(PaneId(2));
+        mgr.rename_active("keep".to_string());
+        assert!(mgr.replace(PaneId(1), PaneId(9)));
+        assert_eq!(mgr.tabs(), &[PaneId(9), PaneId(2)]);
+        assert_eq!(mgr.active_index(), 1);
+        assert_eq!(mgr.names()[1], Some("keep".to_string()));
+    }
+
+    #[test]
+    fn replace_unknown_id_returns_false() {
+        let mut mgr = TabManager::with_initial(PaneId(1));
+        assert!(!mgr.replace(PaneId(99), PaneId(2)));
+        assert_eq!(mgr.tabs(), &[PaneId(1)]);
     }
 
     // --- contains ---

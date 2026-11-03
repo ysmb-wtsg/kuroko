@@ -3,7 +3,10 @@
 
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 
+use std::time::Duration;
+
 use kuroko_core::{Action, AppEvent, PaneId, PaneType, SideContent};
+use kuroko_terminal::pty_handle::PtyMessage;
 
 use super::App;
 use super::overlay::CommandPalette;
@@ -314,6 +317,73 @@ fn close_tab_removes_pane_from_map() {
     let pane_count_before = app.panes.len();
     app.dispatch_action(Action::CloseTab);
     assert_eq!(app.panes.len(), pane_count_before - 1);
+}
+
+#[test]
+fn exited_agent_is_replaced_with_new_session() {
+    let mut app = App::new();
+    app.respawn_min_uptime = Duration::ZERO;
+    let old_id = app.main_tabs.active_id().unwrap();
+    app.pty_tx
+        .send(PtyMessage::Exited { pane_id: old_id })
+        .unwrap();
+    app.drain_pty_messages();
+    let new_id = app.main_tabs.active_id().unwrap();
+    assert_eq!(app.main_tabs.len(), 1);
+    assert_ne!(new_id, old_id);
+    assert!(!app.panes.contains_key(&old_id));
+    assert!(app.panes.contains_key(&new_id));
+    assert_eq!(app.focused, new_id);
+}
+
+/// Ctrl+C イベントを生成する
+fn ctrl_c_key() -> KeyEvent {
+    KeyEvent {
+        code: KeyCode::Char('c'),
+        modifiers: KeyModifiers::CONTROL,
+        kind: KeyEventKind::Press,
+        state: KeyEventState::NONE,
+    }
+}
+
+#[test]
+fn double_ctrl_c_then_agent_exit_quits_app() {
+    let mut app = App::new();
+    app.respawn_min_uptime = Duration::ZERO;
+    let id = app.main_tabs.active_id().unwrap();
+    // 2回とも PTY へ転送される（キーを奪わない）
+    for _ in 0..2 {
+        let actions = app.handle_direct_key(ctrl_c_key());
+        assert!(matches!(actions.as_slice(), [Action::PtyWrite { .. }]));
+    }
+    app.pty_tx.send(PtyMessage::Exited { pane_id: id }).unwrap();
+    app.drain_pty_messages();
+    assert!(app.should_quit);
+}
+
+#[test]
+fn single_ctrl_c_then_agent_exit_does_not_quit() {
+    let mut app = App::new();
+    app.respawn_min_uptime = Duration::ZERO;
+    let id = app.main_tabs.active_id().unwrap();
+    app.handle_direct_key(ctrl_c_key());
+    app.pty_tx.send(PtyMessage::Exited { pane_id: id }).unwrap();
+    app.drain_pty_messages();
+    assert!(!app.should_quit);
+    assert_ne!(app.main_tabs.active_id(), Some(id));
+}
+
+#[test]
+fn quickly_exited_agent_is_kept_to_avoid_respawn_loop() {
+    let mut app = App::new();
+    app.respawn_min_uptime = Duration::from_secs(3600);
+    let old_id = app.main_tabs.active_id().unwrap();
+    app.pty_tx
+        .send(PtyMessage::Exited { pane_id: old_id })
+        .unwrap();
+    app.drain_pty_messages();
+    assert_eq!(app.main_tabs.active_id(), Some(old_id));
+    assert!(app.panes.contains_key(&old_id));
 }
 
 #[test]

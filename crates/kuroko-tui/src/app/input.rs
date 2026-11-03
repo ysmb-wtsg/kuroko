@@ -328,6 +328,18 @@ impl App {
             return vec![];
         }
 
+        // Ctrl+C の押下を記録する（キーは奪わずそのままPTYへ転送する）
+        if key.kind == KeyEventKind::Press
+            && key.code == KeyCode::Char('c')
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            if self.recent_ctrl_c.len() == 2 {
+                self.recent_ctrl_c.pop_front();
+            }
+            self.recent_ctrl_c
+                .push_back((self.focused, std::time::Instant::now()));
+        }
+
         if let Some(data) = super::key_to_bytes(&key) {
             vec![Action::PtyWrite {
                 pane_id: self.focused,

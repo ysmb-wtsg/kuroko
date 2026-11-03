@@ -1111,6 +1111,14 @@ impl App {
 
     /// 新しいエージェントタブを追加し、アクティブに切り替える
     fn new_tab(&mut self) {
+        let new_id = self.spawn_new_agent_pane();
+        self.main_tabs.add(new_id);
+        self.focused = new_id;
+        self.rebuild_layout();
+    }
+
+    /// 新規セッションのエージェントペインを生成して `panes` に登録し、そのIDを返す
+    fn spawn_new_agent_pane(&mut self) -> PaneId {
         let new_id = self.alloc_pane_id();
         let pane = AgentPane::new(
             new_id,
@@ -1120,14 +1128,19 @@ impl App {
             self.pty_tx.clone(),
         );
         self.panes.insert(new_id, Box::new(pane));
-        self.main_tabs.add(new_id);
-        self.focused = new_id;
-        self.rebuild_layout();
+        new_id
     }
 
-    /// アクティブなタブを閉じる（最後の1つは閉じない）
+    /// アクティブなタブを閉じる。
+    /// 最後の1つの場合は、新規セッションのタブに置き換える（main_tabsは常に1つ以上）。
     fn close_tab(&mut self) {
         if self.main_tabs.len() <= 1 {
+            let new_id = self.spawn_new_agent_pane();
+            if let Some(old_id) = self.main_tabs.replace_active(new_id) {
+                self.panes.remove(&old_id);
+            }
+            self.focused = new_id;
+            self.rebuild_layout();
             return;
         }
         if let Some(removed_id) = self.main_tabs.remove_active() {

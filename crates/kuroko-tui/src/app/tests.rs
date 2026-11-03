@@ -293,6 +293,21 @@ fn close_tab_keeps_at_least_one() {
 }
 
 #[test]
+fn close_last_tab_replaces_with_new_session() {
+    let mut app = App::new();
+    let old_id = app.main_tabs.active_id().unwrap();
+    let pane_count_before = app.panes.len();
+    app.dispatch_action(Action::CloseTab);
+    let new_id = app.main_tabs.active_id().unwrap();
+    assert_eq!(app.main_tabs.len(), 1);
+    assert_ne!(new_id, old_id);
+    assert!(!app.panes.contains_key(&old_id));
+    assert!(app.panes.contains_key(&new_id));
+    assert_eq!(app.panes.len(), pane_count_before);
+    assert_eq!(app.focused, new_id);
+}
+
+#[test]
 fn close_tab_removes_pane_from_map() {
     let mut app = App::new();
     app.dispatch_action(Action::NewTab);

@@ -63,6 +63,18 @@ impl TabManager {
         Some(removed)
     }
 
+    /// アクティブタブのPaneIdを差し替え、古いPaneIdを返す。
+    /// タブ位置は維持し、カスタム名はクリアする。
+    ///
+    /// @param id - 新しいペインID
+    /// @returns 差し替え前のPaneId（空の場合はNone）
+    pub fn replace_active(&mut self, id: PaneId) -> Option<PaneId> {
+        let slot = self.tabs.get_mut(self.active)?;
+        let old = std::mem::replace(slot, id);
+        self.names[self.active] = None;
+        Some(old)
+    }
+
     /// 次のタブに切り替える（循環）
     pub fn next(&mut self) {
         if self.tabs.len() <= 1 {
@@ -309,6 +321,33 @@ mod tests {
         mgr.rename_active("my tab".to_string());
         mgr.rename_active("".to_string());
         assert_eq!(mgr.names()[0], None);
+    }
+
+    // --- replace_active ---
+
+    #[test]
+    fn replace_active_swaps_id_and_returns_old() {
+        let mut mgr = TabManager::with_initial(PaneId(1));
+        mgr.add(PaneId(2));
+        mgr.select(0);
+        let old = mgr.replace_active(PaneId(9));
+        assert_eq!(old, Some(PaneId(1)));
+        assert_eq!(mgr.tabs(), &[PaneId(9), PaneId(2)]);
+        assert_eq!(mgr.active_index(), 0);
+    }
+
+    #[test]
+    fn replace_active_clears_custom_name() {
+        let mut mgr = TabManager::with_initial(PaneId(1));
+        mgr.rename_active("my tab".to_string());
+        mgr.replace_active(PaneId(2));
+        assert_eq!(mgr.names()[0], None);
+    }
+
+    #[test]
+    fn replace_active_on_empty_returns_none() {
+        let mut mgr = TabManager::new();
+        assert_eq!(mgr.replace_active(PaneId(1)), None);
     }
 
     // --- contains ---

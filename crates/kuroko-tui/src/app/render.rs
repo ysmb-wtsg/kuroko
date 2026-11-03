@@ -454,7 +454,7 @@ impl App {
             ("H/J/K/L", "Resize pane"),
             ("t / f / g / s", "Toggle terminal / files / git / sessions"),
             ("n", "New tab"),
-            ("x or w", "Close tab"),
+            ("x or w", "Close tab (last tab: replaced with new session)"),
             ("r", "Rename tab"),
             ("] / [", "Next / previous tab"),
             ("1-9", "Select tab by number"),

@@ -480,7 +480,10 @@ impl App {
             ("S-r", "Reload tree"),
             ("", "Sessions sidebar (focused, direct input)"),
             ("j/k", "Move cursor"),
-            ("Enter / l", "Open tab / new session / resume (closes sidebar)"),
+            (
+                "Enter / l",
+                "Open tab / new session / resume (closes sidebar)",
+            ),
             ("n / r", "New session / reload history"),
             ("", "Copy mode"),
             ("h/j/k/l", "Move cursor"),

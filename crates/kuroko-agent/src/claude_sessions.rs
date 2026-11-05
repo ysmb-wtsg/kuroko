@@ -8,6 +8,9 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+/// 検索ヒットの抜粋で、マッチ前後に残す文字数
+const SNIPPET_WIDTH: usize = 20;
+
 /// 一覧表示用のセッション情報
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SessionInfo {
@@ -176,6 +179,105 @@ fn normalize_title(text: &str) -> String {
     text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// アシスタント発言エントリから本文テキストを取り出す（`text` パートのみ。thinking・tool_use は除外）
+fn assistant_message_text(value: &serde_json::Value) -> Option<String> {
+    let content = value.get("message")?.get("content")?;
+    match content {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Array(parts) => {
+            let texts: Vec<&str> = parts
+                .iter()
+                .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"))
+                .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                .collect();
+            (!texts.is_empty()).then(|| texts.join("\n"))
+        }
+        _ => None,
+    }
+}
+
+/// jsonl の1行から、会話として見える本文（ユーザー発言またはアシスタント発言）を取り出す。
+/// ツール入出力（`tool_result` 等）、メタ情報、スラッシュコマンド等のタグ付き本文は含めない。
+///
+/// @param line - jsonl の1行
+/// @returns 本文。会話でない行や本文が無い行はNone
+pub fn message_text(line: &str) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(line).ok()?;
+    match value.get("type").and_then(|t| t.as_str())? {
+        "user" => user_message_text(&value).map(str::to_string),
+        "assistant" => assistant_message_text(&value),
+        _ => None,
+    }
+}
+
+/// 本文からクエリ周辺の抜粋を作る。大文字小文字は区別しない。
+///
+/// @param text - 本文
+/// @param query - 検索語（空文字は一致しない）
+/// @param width - マッチ前後に残す文字数
+/// @returns 一致があれば、前後を `…` で切り詰めた1行の抜粋
+pub fn snippet(text: &str, query: &str, width: usize) -> Option<String> {
+    if query.is_empty() {
+        return None;
+    }
+    let flat: Vec<char> = normalize_title(text).chars().collect();
+    let needle: Vec<char> = query.to_lowercase().chars().collect();
+    let lower: Vec<char> = flat
+        .iter()
+        .map(|c| c.to_lowercase().next().unwrap_or(*c))
+        .collect();
+    let pos = lower.windows(needle.len()).position(|w| w == needle)?;
+    let start = pos.saturating_sub(width);
+    let end = (pos + needle.len() + width).min(flat.len());
+    let mut out = String::new();
+    if start > 0 {
+        out.push('…');
+    }
+    out.extend(&flat[start..end]);
+    if end < flat.len() {
+        out.push('…');
+    }
+    Some(out)
+}
+
+/// 指定セッションの会話本文をクエリで検索し、ヒットしたセッションごとに最初の抜粋を返す。
+/// 全行を JSON 解析すると重いため、生の行に（小文字化した）クエリが含まれる行だけを解析する。
+///
+/// @param dir - セッションjsonlが置かれたディレクトリ
+/// @param ids - 検索対象のセッションID
+/// @param query - 検索語
+/// @returns セッションID → 抜粋
+pub fn search_content<'a>(
+    dir: &Path,
+    ids: impl IntoIterator<Item = &'a str>,
+    query: &str,
+) -> HashMap<String, String> {
+    let mut hits = HashMap::new();
+    let query = query.trim();
+    if query.is_empty() {
+        return hits;
+    }
+    let needle = query.to_lowercase();
+    for id in ids {
+        let Ok(file) = fs::File::open(dir.join(format!("{id}.jsonl"))) else {
+            continue;
+        };
+        for line in BufReader::new(file).lines().map_while(Result::ok) {
+            // Claude Code はJSON文字列で非ASCIIをエスケープしないため、生の行での事前判定で足りる
+            if !line.to_lowercase().contains(&needle) {
+                continue;
+            }
+            if let Some(text) = message_text(&line)
+                && let Some(found) = snippet(&text, query, SNIPPET_WIDTH)
+            {
+                hits.insert(id.to_string(), found);
+                break;
+            }
+        }
+    }
+    hits
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -234,6 +336,82 @@ mod tests {
             r#"{"type":"user","message":{"role":"user","content":"<command-name>/clear</command-name>"}}"#,
         ];
         assert_eq!(title_of(&lines), None);
+    }
+
+    #[test]
+    fn message_text_extracts_conversation_only() {
+        let user = r#"{"type":"user","message":{"role":"user","content":"hello"}}"#;
+        assert_eq!(message_text(user).as_deref(), Some("hello"));
+
+        let assistant = r#"{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"hmm"},{"type":"text","text":"answer"},{"type":"tool_use","name":"Bash"}]}}"#;
+        assert_eq!(message_text(assistant).as_deref(), Some("answer"));
+
+        // ツール結果（userとして記録される）・メタ・タグ付き本文・非会話行は除外
+        let tool_result = r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"secret"}]}}"#;
+        assert_eq!(message_text(tool_result), None);
+        let meta = r#"{"type":"user","isMeta":true,"message":{"role":"user","content":"meta"}}"#;
+        assert_eq!(message_text(meta), None);
+        let tagged = r#"{"type":"user","message":{"role":"user","content":"<command-name>/x</command-name>"}}"#;
+        assert_eq!(message_text(tagged), None);
+        assert_eq!(message_text(r#"{"type":"ai-title","aiTitle":"x"}"#), None);
+        assert_eq!(message_text("not json"), None);
+    }
+
+    #[test]
+    fn snippet_trims_around_match_and_is_case_insensitive() {
+        let text = "aaaaaaaaaa Needle bbbbbbbbbb";
+        assert_eq!(
+            snippet(text, "needle", 3).as_deref(),
+            Some("…aa Needle bb…")
+        );
+        assert_eq!(
+            snippet("short Needle", "NEEDLE", 20).as_deref(),
+            Some("short Needle")
+        );
+        assert_eq!(snippet(text, "zzz", 3), None);
+        assert_eq!(snippet(text, "", 3), None);
+    }
+
+    #[test]
+    fn snippet_handles_multibyte_text() {
+        let text = "あいうえおかきくけこ認証トークンさしすせそたちつてと";
+        assert_eq!(snippet(text, "認証", 2).as_deref(), Some("…けこ認証トー…"));
+    }
+
+    #[test]
+    fn search_content_finds_conversation_text_not_tool_output() {
+        let dir = std::env::temp_dir().join(format!("krk-search-test-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join("a.jsonl"),
+            concat!(
+                r#"{"type":"user","message":{"role":"user","content":"fix the Login bug"}}"#,
+                "\n",
+                r#"{"type":"assistant","message":{"content":[{"type":"text","text":"done"}]}}"#,
+            ),
+        )
+        .unwrap();
+        fs::write(
+            dir.join("b.jsonl"),
+            r#"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","content":"login in output"}]}}"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("c.jsonl"),
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"認証を直した"}]}}"#,
+        )
+        .unwrap();
+
+        let hits = search_content(&dir, ["a", "b", "c", "missing"], "login");
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits["a"], "fix the Login bug");
+
+        let hits = search_content(&dir, ["a", "c"], "認証");
+        assert_eq!(hits.keys().collect::<Vec<_>>(), vec!["c"]);
+
+        assert!(search_content(&dir, ["a"], "  ").is_empty());
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

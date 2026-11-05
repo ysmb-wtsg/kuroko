@@ -485,6 +485,8 @@ impl App {
                 "Open tab / new session / resume (closes sidebar)",
             ),
             ("n / r", "New session / reload history"),
+            ("p", "Pin / unpin session"),
+            ("/", "Search title and conversation (Enter:done Esc:clear)"),
             ("", "Copy mode"),
             ("h/j/k/l", "Move cursor"),
             ("w / b / e", "Next word / prev word / word end"),

@@ -3,6 +3,7 @@
 //! 選択してEnterでタブ切り替え・セッション再開を行う。
 
 use std::any::Any;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
@@ -11,17 +12,21 @@ use std::time::{Duration, Instant, SystemTime};
 use ratatui::Frame;
 use ratatui::layout::{Margin, Rect};
 use ratatui::style::{Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{List, ListItem, ListState};
 
 use kuroko_core::theme;
 use kuroko_core::{Action, AppEvent, Pane, PaneId, PaneType};
 
 use crate::claude_sessions::{self, SessionInfo, TitleCache};
+use crate::session_pins::PinStore;
 use crate::status::AgentStatus;
 
 /// 履歴を自動で読み直す間隔（表示中のみ）
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5);
+
+/// 入力が止まってから会話内容の検索を始めるまでの待ち時間
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(200);
 
 /// 開いているメインタブの情報（App側から毎フレーム渡される）
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +50,8 @@ enum Entry {
     Open(usize),
     /// 新規セッションを立ち上げる行（TABS の末尾）
     New,
+    /// ピン留め済みの過去セッション（`history` のインデックス）
+    Pinned(usize),
     /// 過去セッション（`history` のインデックス）
     History(usize),
 }
@@ -67,6 +74,22 @@ pub struct SessionListPane {
     loading: Option<mpsc::Receiver<Vec<SessionInfo>>>,
     /// 最後に読み込みを開始した時刻
     last_refresh: Option<Instant>,
+    /// ピン留め状態
+    pins: PinStore,
+    /// ピン留めのプロジェクトキー（エンコード済みcwd）
+    project_key: String,
+    /// 検索クエリ（空なら絞り込まない）
+    query: String,
+    /// 検索クエリを入力中か（ペイン内部の状態。グローバルな状態は持たない）
+    editing: bool,
+    /// 最後にクエリを編集した時刻（会話内容検索のデバウンス用）
+    last_edit: Option<Instant>,
+    /// 会話内容検索の結果（セッションID → 抜粋）
+    content_hits: HashMap<String, String>,
+    /// `content_hits` がどのクエリの結果か
+    searched_query: Option<String>,
+    /// 実行中の会話内容検索（検索したクエリと結果の受信口）
+    searching: Option<mpsc::Receiver<(String, HashMap<String, String>)>>,
 }
 
 impl SessionListPane {
@@ -75,11 +98,15 @@ impl SessionListPane {
     /// @param id - ペインID
     /// @param cwd - 作業ディレクトリ（Claude Code のプロジェクト識別に使う）
     pub fn new(id: PaneId, cwd: PathBuf) -> Self {
-        Self::with_dir(id, claude_sessions::project_sessions_dir(&cwd))
+        Self::with_dir(
+            id,
+            claude_sessions::project_sessions_dir(&cwd),
+            claude_sessions::encode_project_path(&cwd),
+        )
     }
 
-    /// セッション保存先ディレクトリを直接指定して生成する
-    fn with_dir(id: PaneId, dir: Option<PathBuf>) -> Self {
+    /// セッション保存先ディレクトリとプロジェクトキーを直接指定して生成する
+    fn with_dir(id: PaneId, dir: Option<PathBuf>, project_key: String) -> Self {
         Self {
             id,
             dir,
@@ -90,6 +117,14 @@ impl SessionListPane {
             cache: Arc::new(Mutex::new(TitleCache::new())),
             loading: None,
             last_refresh: None,
+            pins: PinStore::load(),
+            project_key,
+            query: String::new(),
+            editing: false,
+            last_edit: None,
+            content_hits: HashMap::new(),
+            searched_query: None,
+            searching: None,
         }
     }
 
@@ -142,16 +177,87 @@ impl SessionListPane {
         if due {
             self.refresh();
         }
+        self.poll_search();
     }
 
-    /// 表示中の過去セッション（タブで開いているものは除く）のインデックス
-    fn visible_history(&self) -> impl Iterator<Item = usize> + '_ {
-        self.history.iter().enumerate().filter_map(|(i, s)| {
-            let is_open = self
-                .open
-                .iter()
-                .any(|o| o.session_id.as_deref() == Some(s.id.as_str()));
-            (!is_open).then_some(i)
+    /// 前後の空白を除いた小文字のクエリ
+    fn needle(&self) -> String {
+        self.query.trim().to_lowercase()
+    }
+
+    /// 会話内容検索の結果を取り込み、クエリが変わっていれば新しい検索を始める
+    fn poll_search(&mut self) {
+        if let Some(rx) = &self.searching {
+            match rx.try_recv() {
+                Ok((query, hits)) => {
+                    self.searching = None;
+                    // 検索中にクエリが変わった結果は捨てる（次の呼び出しで再検索される）
+                    if query == self.needle() {
+                        self.content_hits = hits;
+                        self.searched_query = Some(query);
+                        self.clamp_selection();
+                    }
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.searching = None,
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        let needle = self.needle();
+        let settled = self
+            .last_edit
+            .is_none_or(|t| t.elapsed() >= SEARCH_DEBOUNCE);
+        if needle.is_empty()
+            || self.searching.is_some()
+            || self.searched_query.as_deref() == Some(needle.as_str())
+            || !settled
+        {
+            return;
+        }
+        let Some(dir) = self.dir.clone() else {
+            return;
+        };
+        // タブで開いているセッションは過去セッション側に出ないため、検索対象から外す
+        let ids: Vec<String> = self
+            .history
+            .iter()
+            .filter(|s| !self.is_open(&s.id))
+            .map(|s| s.id.clone())
+            .collect();
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let hits =
+                claude_sessions::search_content(&dir, ids.iter().map(String::as_str), &needle);
+            let _ = tx.send((needle, hits));
+        });
+        self.searching = Some(rx);
+    }
+
+    /// 指定セッションがタブで開かれているか
+    fn is_open(&self, id: &str) -> bool {
+        self.open
+            .iter()
+            .any(|o| o.session_id.as_deref() == Some(id))
+    }
+
+    /// 検索クエリに一致するか（タイトル、または会話内容の検索結果）。クエリが空なら常に一致
+    fn matches_query(&self, session: &SessionInfo) -> bool {
+        let needle = self.needle();
+        if needle.is_empty() {
+            return true;
+        }
+        let content_hit = self.searched_query.as_deref() == Some(needle.as_str())
+            && self.content_hits.contains_key(&session.id);
+        content_hit || session.title.to_lowercase().contains(&needle)
+    }
+
+    /// 表示中の過去セッション（タブで開いているものは除く）のインデックス。
+    /// `pinned` でピン留め済み／未ピンを切り分け、検索クエリで絞り込む
+    fn listed(&self, pinned: bool) -> impl Iterator<Item = usize> + '_ {
+        self.history.iter().enumerate().filter_map(move |(i, s)| {
+            let show = !self.is_open(&s.id)
+                && self.pins.is_pinned(&self.project_key, &s.id) == pinned
+                && self.matches_query(s);
+            show.then_some(i)
         })
     }
 
@@ -160,7 +266,8 @@ impl SessionListPane {
         (0..self.open.len())
             .map(Entry::Open)
             .chain(std::iter::once(Entry::New))
-            .chain(self.visible_history().map(Entry::History))
+            .chain(self.listed(true).map(Entry::Pinned))
+            .chain(self.listed(false).map(Entry::History))
             .collect()
     }
 
@@ -169,13 +276,94 @@ impl SessionListPane {
         self.selected = self.selected.min(len.saturating_sub(1));
     }
 
+    /// 行に対応するセッションID（New 行・ID不明のタブはNone）
+    fn session_id_of(&self, entry: &Entry) -> Option<String> {
+        match entry {
+            Entry::Open(i) => self.open[*i].session_id.clone(),
+            Entry::Pinned(i) | Entry::History(i) => Some(self.history[*i].id.clone()),
+            Entry::New => None,
+        }
+    }
+
+    /// 選択行のセッションのピン留めを切り替える。
+    /// 行は PINNED / HISTORY の間を移るため、選択も同じセッションに追従させる
+    fn toggle_pin(&mut self) {
+        let entries = self.entries();
+        let Some(id) = entries
+            .get(self.selected)
+            .and_then(|e| self.session_id_of(e))
+        else {
+            return;
+        };
+        self.pins.toggle(&self.project_key, &id);
+        let moved = self
+            .entries()
+            .iter()
+            .position(|e| self.session_id_of(e).as_deref() == Some(id.as_str()));
+        if let Some(index) = moved {
+            self.selected = index;
+        }
+        self.clamp_selection();
+    }
+
+    /// 検索結果の先頭（PINNED / HISTORY の最初の行）を選択する。無ければ選択は変えない
+    fn select_first_hit(&mut self) {
+        if let Some(index) = self
+            .entries()
+            .iter()
+            .position(|e| matches!(e, Entry::Pinned(_) | Entry::History(_)))
+        {
+            self.selected = index;
+        }
+    }
+
+    /// 検索を解除して絞り込みを戻す
+    fn clear_search(&mut self) {
+        self.query.clear();
+        self.editing = false;
+        self.last_edit = None;
+        self.content_hits.clear();
+        self.searched_query = None;
+        self.clamp_selection();
+    }
+
+    /// 検索クエリ入力中のキー処理。文字はすべてクエリに入る
+    fn handle_search_key(&mut self, key: &ratatui::crossterm::event::KeyEvent) {
+        use ratatui::crossterm::event::{KeyCode, KeyModifiers};
+
+        match key.code {
+            KeyCode::Char(c)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                self.query.push(c);
+            }
+            KeyCode::Backspace => {
+                self.query.pop();
+            }
+            KeyCode::Enter => {
+                self.editing = false;
+                return;
+            }
+            KeyCode::Esc => {
+                self.clear_search();
+                return;
+            }
+            _ => return,
+        }
+        self.last_edit = Some(Instant::now());
+        self.select_first_hit();
+        self.clamp_selection();
+    }
+
     /// 選択行に対するEnterの動作。
     /// タブを開いたらサイドバーは役目を終えるので、併せて閉じる。
     fn activate(&self) -> Vec<Action> {
         let action = match self.entries().get(self.selected) {
             Some(Entry::Open(i)) => Action::SelectTab(self.open[*i].tab_index),
             Some(Entry::New) => Action::NewTab,
-            Some(Entry::History(i)) => {
+            Some(Entry::Pinned(i) | Entry::History(i)) => {
                 let session = &self.history[*i];
                 Action::ResumeSession {
                     id: session.id.clone(),
@@ -222,10 +410,27 @@ impl Pane for SessionListPane {
         self.poll_refresh();
 
         let t = theme::get();
-        let inner = area.inner(Margin {
+        let mut inner = area.inner(Margin {
             horizontal: 1,
             vertical: 0,
         });
+        // 検索中は最上段に検索バーを出し、残りを一覧にする
+        if self.editing || !self.query.is_empty() {
+            let bar = Rect { height: 1, ..inner };
+            let cursor = if self.editing { "▏" } else { "" };
+            frame.render_widget(
+                Line::from(vec![
+                    Span::styled("/ ", Style::default().fg(t.accent_secondary)),
+                    Span::styled(
+                        format!("{}{cursor}", self.query),
+                        Style::default().fg(t.text_primary),
+                    ),
+                ]),
+                bar,
+            );
+            inner.y += 1;
+            inner.height = inner.height.saturating_sub(1);
+        }
         let header_style = Style::default()
             .fg(t.text_muted)
             .add_modifier(Modifier::BOLD);
@@ -238,11 +443,15 @@ impl Pane for SessionListPane {
 
         items.push(ListItem::new(Line::styled("TABS", header_style)));
         for (n, entry) in entries.iter().enumerate() {
-            if let Entry::History(_) = entry
-                && !matches!(entries.get(n.wrapping_sub(1)), Some(Entry::History(_)))
-            {
+            let prev = n.checked_sub(1).and_then(|p| entries.get(p));
+            let heading = match entry {
+                Entry::Pinned(_) if !matches!(prev, Some(Entry::Pinned(_))) => Some("PINNED"),
+                Entry::History(_) if !matches!(prev, Some(Entry::History(_))) => Some("HISTORY"),
+                _ => None,
+            };
+            if let Some(heading) = heading {
                 items.push(ListItem::new(Line::raw("")));
-                items.push(ListItem::new(Line::styled("HISTORY", header_style)));
+                items.push(ListItem::new(Line::styled(heading, header_style)));
             }
             if n == self.selected {
                 selected_row = Some(items.len());
@@ -264,13 +473,21 @@ impl Pane for SessionListPane {
                     } else {
                         Style::default().fg(t.text_body)
                     };
-                    Line::from(vec![
+                    let mut spans = vec![
                         Span::styled(format!("{mark} "), Style::default().fg(color)),
                         Span::styled(open.name.clone(), name_style),
-                    ])
+                    ];
+                    let pinned = open
+                        .session_id
+                        .as_deref()
+                        .is_some_and(|id| self.pins.is_pinned(&self.project_key, id));
+                    if pinned {
+                        spans.push(Span::styled(" ★", Style::default().fg(t.accent_warning)));
+                    }
+                    Line::from(spans)
                 }
                 Entry::New => Line::styled("+ New session", Style::default().fg(t.text_muted)),
-                Entry::History(i) => {
+                Entry::Pinned(i) | Entry::History(i) => {
                     let session = &self.history[*i];
                     Line::from(vec![
                         Span::styled(
@@ -281,7 +498,32 @@ impl Pane for SessionListPane {
                     ])
                 }
             };
+            // 会話内容でヒットした行は、タイトルの下に一致箇所の抜粋を薄色で添える
+            let snippet = match entry {
+                Entry::Pinned(i) | Entry::History(i) => self
+                    .searched_query
+                    .as_ref()
+                    .and_then(|_| self.content_hits.get(&self.history[*i].id)),
+                _ => None,
+            };
+            if let Some(snippet) = snippet {
+                items.push(ListItem::new(Text::from(vec![
+                    line,
+                    Line::styled(format!("    {snippet}"), Style::default().fg(t.text_dim)),
+                ])));
+                continue;
+            }
             items.push(ListItem::new(line));
+        }
+        if !self.query.is_empty()
+            && !entries
+                .iter()
+                .any(|e| matches!(e, Entry::Pinned(_) | Entry::History(_)))
+        {
+            items.push(ListItem::new(Line::styled(
+                "(no matches)",
+                Style::default().fg(t.text_dim),
+            )));
         }
         if self.dir.is_none() {
             items.push(ListItem::new(Line::styled(
@@ -311,6 +553,10 @@ impl Pane for SessionListPane {
         if key.kind != KeyEventKind::Press {
             return vec![];
         }
+        if self.editing {
+            self.handle_search_key(key);
+            return vec![];
+        }
         let last = self.entries().len().saturating_sub(1);
         match key.code {
             KeyCode::Char('j') | KeyCode::Down => self.selected = (self.selected + 1).min(last),
@@ -320,6 +566,9 @@ impl Pane for SessionListPane {
             KeyCode::Enter | KeyCode::Char('l') => return self.activate(),
             KeyCode::Char('n') => return open_and_close(Action::NewTab),
             KeyCode::Char('r') => self.refresh(),
+            KeyCode::Char('p') => self.toggle_pin(),
+            KeyCode::Char('/') => self.editing = true,
+            KeyCode::Esc if !self.query.is_empty() => self.clear_search(),
             _ => {}
         }
         vec![]
@@ -370,7 +619,7 @@ mod tests {
     }
 
     fn pane() -> SessionListPane {
-        let mut pane = SessionListPane::with_dir(PaneId(1), None);
+        let mut pane = SessionListPane::with_dir(PaneId(1), None, "proj".to_string());
         pane.history = vec![session("a", "A"), session("b", "B"), session("c", "C")];
         pane.set_open_sessions(vec![open(0, Some("b")), open(1, None)]);
         pane
@@ -434,6 +683,187 @@ mod tests {
             [Action::ResumeSession { id, title }, Action::ToggleSessions]
                 if id == "c" && title == "C"
         ));
+    }
+
+    fn type_str(pane: &mut SessionListPane, text: &str) {
+        for c in text.chars() {
+            pane.handle_event(&key(KeyCode::Char(c)));
+        }
+    }
+
+    #[test]
+    fn pinned_sessions_move_to_pinned_section() {
+        let mut pane = pane();
+        // Open(0), Open(1), New, History(0)=a, History(2)=c の a を選んでピン留め
+        for _ in 0..3 {
+            pane.handle_event(&key(KeyCode::Char('j')));
+        }
+        pane.handle_event(&key(KeyCode::Char('p')));
+        assert_eq!(
+            pane.entries(),
+            vec![
+                Entry::Open(0),
+                Entry::Open(1),
+                Entry::New,
+                Entry::Pinned(0),
+                Entry::History(2)
+            ]
+        );
+        // 選択はピン留めしたセッションに追従する
+        assert_eq!(pane.entries()[pane.selected], Entry::Pinned(0));
+
+        // もう一度 p で解除
+        pane.handle_event(&key(KeyCode::Char('p')));
+        assert_eq!(pane.entries()[pane.selected], Entry::History(0));
+    }
+
+    #[test]
+    fn pinned_open_session_stays_in_tabs_only() {
+        let mut pane = pane();
+        // Open(0) は session b
+        pane.handle_event(&key(KeyCode::Char('p')));
+        assert!(pane.pins.is_pinned("proj", "b"));
+        assert!(!pane.entries().iter().any(|e| matches!(e, Entry::Pinned(_))));
+    }
+
+    #[test]
+    fn pin_on_tab_without_session_id_or_new_row_is_noop() {
+        let mut pane = pane();
+        pane.handle_event(&key(KeyCode::Char('j')));
+        pane.handle_event(&key(KeyCode::Char('p')));
+        pane.handle_event(&key(KeyCode::Char('j')));
+        pane.handle_event(&key(KeyCode::Char('p')));
+        assert!(!pane.pins.is_pinned("proj", "a"));
+    }
+
+    #[test]
+    fn enter_on_pinned_resumes_session() {
+        let mut pane = pane();
+        pane.pins.toggle("proj", "c");
+        pane.handle_event(&key(KeyCode::Char('G')));
+        // PINNED の c が History より前にあるので末尾は a
+        pane.selected = pane
+            .entries()
+            .iter()
+            .position(|e| matches!(e, Entry::Pinned(_)))
+            .unwrap();
+        let actions = pane.handle_event(&key(KeyCode::Enter));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::ResumeSession { id, .. }, Action::ToggleSessions] if id == "c"
+        ));
+    }
+
+    #[test]
+    fn search_filters_by_title_and_selects_first_hit() {
+        let mut pane = pane();
+        pane.handle_event(&key(KeyCode::Char('/')));
+        assert!(pane.editing);
+        // 入力中は j / p もクエリの文字になる
+        type_str(&mut pane, "c");
+        assert_eq!(
+            pane.entries(),
+            vec![
+                Entry::Open(0),
+                Entry::Open(1),
+                Entry::New,
+                Entry::History(2)
+            ]
+        );
+        assert_eq!(pane.entries()[pane.selected], Entry::History(2));
+
+        type_str(&mut pane, "jp");
+        assert_eq!(pane.query, "cjp");
+        assert!(!pane.pins.is_pinned("proj", "a"));
+    }
+
+    #[test]
+    fn search_is_case_insensitive_and_backspace_widens() {
+        let mut pane = pane();
+        pane.handle_event(&key(KeyCode::Char('/')));
+        type_str(&mut pane, "Ab");
+        assert!(
+            !pane
+                .entries()
+                .iter()
+                .any(|e| matches!(e, Entry::History(_)))
+        );
+        pane.handle_event(&key(KeyCode::Backspace));
+        assert_eq!(pane.query, "A");
+        assert_eq!(
+            pane.entries()
+                .iter()
+                .filter(|e| matches!(e, Entry::History(_)))
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn enter_ends_editing_and_esc_clears_query() {
+        let mut pane = pane();
+        pane.handle_event(&key(KeyCode::Char('/')));
+        type_str(&mut pane, "a");
+        pane.handle_event(&key(KeyCode::Enter));
+        assert!(!pane.editing);
+        assert_eq!(pane.query, "a");
+
+        // 入力終了後は通常のキー操作に戻る（Enter はタブ切り替え等を返す）
+        let actions = pane.handle_event(&key(KeyCode::Enter));
+        assert!(matches!(
+            actions.as_slice(),
+            [Action::ResumeSession { .. }, _]
+        ));
+
+        pane.handle_event(&key(KeyCode::Esc));
+        assert!(pane.query.is_empty());
+        assert_eq!(pane.entries().len(), 5);
+    }
+
+    #[test]
+    fn esc_while_editing_clears_and_stops_editing() {
+        let mut pane = pane();
+        pane.handle_event(&key(KeyCode::Char('/')));
+        type_str(&mut pane, "zzz");
+        pane.handle_event(&key(KeyCode::Esc));
+        assert!(!pane.editing);
+        assert!(pane.query.is_empty());
+    }
+
+    #[test]
+    fn content_search_adds_hits_beyond_title_matches() {
+        let dir = std::env::temp_dir().join(format!("krk-pane-search-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("a.jsonl"),
+            r#"{"type":"assistant","message":{"content":[{"type":"text","text":"the Quokka is here"}]}}"#,
+        )
+        .unwrap();
+
+        let mut pane = pane();
+        pane.dir = Some(dir.clone());
+        pane.handle_event(&key(KeyCode::Char('/')));
+        type_str(&mut pane, "quokka");
+        // タイトル（A/B/C）には一致しないので、内容検索の完了までHISTORYは空
+        assert!(
+            !pane
+                .entries()
+                .iter()
+                .any(|e| matches!(e, Entry::History(_)))
+        );
+
+        pane.last_edit = Some(Instant::now() - Duration::from_secs(1));
+        for _ in 0..100 {
+            pane.poll_search();
+            if pane.searched_query.is_some() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(pane.entries().last(), Some(&Entry::History(0)));
+        assert_eq!(pane.content_hits["a"], "the Quokka is here");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

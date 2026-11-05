@@ -5,6 +5,7 @@ mod agent_pane;
 mod claude_command;
 pub mod claude_sessions;
 mod session_list_pane;
+mod session_pins;
 mod status;
 
 pub use agent_pane::AgentPane;

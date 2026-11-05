@@ -829,12 +829,64 @@ fn global_oneshot_keys_return_to_direct() {
         KeyCode::Char('g'),
         KeyCode::Char('s'),
         KeyCode::Char(':'),
+        KeyCode::Char('?'),
     ] {
         let mut app = App::new();
         app.global_mode = true;
         app.handle_global_key(press_key(key));
         assert!(!app.global_mode, "{key:?} は直通へ戻るべき");
     }
+}
+
+#[test]
+fn question_mark_in_global_mode_opens_help() {
+    let mut app = App::new();
+    app.global_mode = true;
+    let actions = app.handle_global_key(press_key(KeyCode::Char('?')));
+    assert!(matches!(actions.as_slice(), [Action::ShowHelp]));
+    assert!(!app.global_mode);
+}
+
+/// ヘルプの見出し（空キーの行）だけを取り出す
+fn help_headings(focus: Option<PaneType>) -> Vec<&'static str> {
+    super::render::help_entries(focus)
+        .into_iter()
+        .filter(|(key, _)| key.is_empty())
+        .map(|(_, desc)| desc)
+        .collect()
+}
+
+#[test]
+fn help_shows_global_and_focused_area_only() {
+    assert_eq!(help_headings(None), vec!["Global mode"]);
+    assert_eq!(
+        help_headings(Some(PaneType::Agent)),
+        vec![
+            "Agent / Terminal (direct input)",
+            "Copy mode",
+            "Global mode"
+        ]
+    );
+    assert_eq!(
+        help_headings(Some(PaneType::Terminal)),
+        help_headings(Some(PaneType::Agent))
+    );
+    assert_eq!(
+        help_headings(Some(PaneType::FileTree)),
+        vec!["File tree (focused, direct input)", "Global mode"]
+    );
+    assert_eq!(
+        help_headings(Some(PaneType::Sessions)),
+        vec!["Sessions sidebar (focused, direct input)", "Global mode"]
+    );
+}
+
+#[test]
+fn help_hint_shows_toggle_key_in_direct_and_question_mark_in_global() {
+    let mut app = App::new();
+    assert_eq!(app.help_hint(), " C-g ? help ");
+    app.global_mode = true;
+    assert_eq!(app.help_hint(), " ? help ");
 }
 
 #[test]

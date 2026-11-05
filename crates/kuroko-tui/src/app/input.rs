@@ -371,7 +371,7 @@ impl App {
         // Enter（コピーモード）は分岐内で自前で抜ける
         let has_tab_ops = is_main_tab || is_bottom_terminal;
         let oneshot = match key.code {
-            KeyCode::Char('h' | 'j' | 'k' | 'l' | 't' | 'f' | 'g' | 's' | ':')
+            KeyCode::Char('h' | 'j' | 'k' | 'l' | 't' | 'f' | 'g' | 's' | ':' | '?')
             | KeyCode::Tab
             | KeyCode::BackTab => true,
             KeyCode::Char('n' | 'x' | 'w' | 'r' | '1'..='9') => has_tab_ops,
@@ -442,6 +442,9 @@ impl App {
             KeyCode::Char(c @ '1'..='9') if is_bottom_terminal => {
                 vec![Action::SelectTerminalTab((c as usize) - ('1' as usize))]
             }
+
+            // キーバインドのヘルプ
+            KeyCode::Char('?') => vec![Action::ShowHelp],
 
             // コマンドパレット
             KeyCode::Char(':') => {

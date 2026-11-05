@@ -19,6 +19,92 @@ use super::App;
 use super::overlay::MessageLevel;
 use super::tab_manager::TabManager;
 
+const HELP_GLOBAL: &[(&str, &str)] = &[
+    ("", "Global mode"),
+    ("C-Space", "Enter / leave global mode"),
+    ("Esc", "Back to direct input"),
+    ("h/j/k/l", "Focus pane left/down/up/right"),
+    ("Tab / S-Tab", "Focus next / previous pane"),
+    ("H/J/K/L", "Resize pane"),
+    ("t / f / g / s", "Toggle terminal / files / git / sessions"),
+    ("n", "New tab"),
+    ("x or w", "Close tab (last tab: replaced with new session)"),
+    ("r", "Rename tab"),
+    ("] / [", "Next / previous tab"),
+    ("1-9", "Select tab by number"),
+    ("Enter", "Copy mode (terminal/agent pane)"),
+    (":", "Command palette"),
+    ("?", "Show this help"),
+    ("q", "Quit"),
+];
+
+const HELP_AGENT: &[(&str, &str)] = &[
+    ("", "Agent / Terminal (direct input)"),
+    ("Enter", "Send / submit"),
+    (
+        "Ctrl+j",
+        "Insert a newline (Shift/Alt+Enter on supported terminals)",
+    ),
+];
+
+const HELP_FILETREE: &[(&str, &str)] = &[
+    ("", "File tree (focused, direct input)"),
+    ("j/k", "Move cursor"),
+    ("Enter/l/h", "Expand / collapse directory"),
+    ("p / e", "Preview / edit (external editor)"),
+    ("i", "File info"),
+    ("a / r / d", "Create / rename / delete"),
+    ("o", "Send file path to agent"),
+    ("y / Y", "Copy name / full path"),
+    ("v", "Multi-select (Space:toggle d:delete)"),
+    ("S-h", "Toggle hidden files"),
+    ("S-r", "Reload tree"),
+];
+
+const HELP_SESSIONS: &[(&str, &str)] = &[
+    ("", "Sessions sidebar (focused, direct input)"),
+    ("j/k", "Move cursor"),
+    (
+        "Enter / l",
+        "Open tab / new session / resume (closes sidebar)",
+    ),
+    ("n / r", "New session / reload history"),
+    ("p", "Pin / unpin session"),
+    ("/", "Search title and conversation (Enter:done Esc:clear)"),
+];
+
+const HELP_COPY: &[(&str, &str)] = &[
+    ("", "Copy mode"),
+    ("h/j/k/l", "Move cursor"),
+    ("w / b / e", "Next word / prev word / word end"),
+    ("0 / ^ / $", "Line start / first char / line end"),
+    ("C-d / C-u", "Half page down / up"),
+    ("g / G", "Scroll to top / bottom"),
+    ("v / V", "Select chars / lines (again: clear)"),
+    ("y", "Copy selection and exit"),
+    ("Enter / q / Esc", "Exit copy mode"),
+];
+
+/// ヘルプに出す行を返す。フォーカス中のペインに関する節、グローバルモードの節の順に並べる。
+/// 空キーの行はセクション見出し。
+///
+/// @param focus - フォーカス中ペインの種別（不明ならグローバルモードの節のみ）
+pub(super) fn help_entries(focus: Option<PaneType>) -> Vec<(&'static str, &'static str)> {
+    // フォーカス中エリアの節を上、グローバルモードの節を下に並べる
+    let mut entries = Vec::new();
+    match focus {
+        Some(PaneType::Agent | PaneType::Terminal) => {
+            entries.extend_from_slice(HELP_AGENT);
+            entries.extend_from_slice(HELP_COPY);
+        }
+        Some(PaneType::FileTree) => entries.extend_from_slice(HELP_FILETREE),
+        Some(PaneType::Sessions) => entries.extend_from_slice(HELP_SESSIONS),
+        None => {}
+    }
+    entries.extend_from_slice(HELP_GLOBAL);
+    entries
+}
+
 impl App {
     /// ターミナルにフレームを描画する
     pub(super) fn draw(&mut self, terminal: &mut DefaultTerminal) -> io::Result<()> {
@@ -425,17 +511,25 @@ impl App {
             area,
         );
 
-        // 右端にヘルプコマンドのヒントを表示（グローバルモード中のみ。
-        // 直通中は`:`がペインに送られるため誤誘導になる）
+        // 右端にヘルプの開き方を表示する。直通中はトグルキーから、
+        // グローバルモード中は `?` で開ける（アプリはキーを奪わないので表示のみ）
+        frame.render_widget(
+            Paragraph::new(Span::styled(
+                self.help_hint(),
+                Style::default().fg(t.text_dim).bg(t.surface),
+            ))
+            .alignment(ratatui::layout::Alignment::Right),
+            area,
+        );
+    }
+
+    /// ステータスバー右端に出すヘルプの案内文を返す
+    pub(super) fn help_hint(&self) -> String {
         if self.global_mode {
-            frame.render_widget(
-                Paragraph::new(Span::styled(
-                    " :help ",
-                    Style::default().fg(t.text_dim).bg(t.surface),
-                ))
-                .alignment(ratatui::layout::Alignment::Right),
-                area,
-            );
+            " ? help ".to_string()
+        } else {
+            let toggle = self.layer_toggle_key();
+            format!(" {} ? help ", toggle.trim_matches(['<', '>']))
         }
     }
 
@@ -444,59 +538,8 @@ impl App {
     fn render_help(&self, frame: &mut ratatui::Frame, area: Rect) {
         let t = theme::get();
 
-        // (キー, 説明) のリスト。空キーはセクション見出し
-        let entries: &[(&str, &str)] = &[
-            ("", "Global mode"),
-            ("C-Space", "Enter / leave global mode"),
-            ("Esc", "Back to direct input"),
-            ("h/j/k/l", "Focus pane left/down/up/right"),
-            ("Tab / S-Tab", "Focus next / previous pane"),
-            ("H/J/K/L", "Resize pane"),
-            ("t / f / g / s", "Toggle terminal / files / git / sessions"),
-            ("n", "New tab"),
-            ("x or w", "Close tab (last tab: replaced with new session)"),
-            ("r", "Rename tab"),
-            ("] / [", "Next / previous tab"),
-            ("1-9", "Select tab by number"),
-            ("Enter", "Copy mode (terminal/agent pane)"),
-            (":", "Command palette"),
-            ("q", "Quit"),
-            ("", "Agent / Terminal (direct input)"),
-            ("Enter", "Send / submit"),
-            (
-                "Ctrl+j",
-                "Insert a newline (Shift/Alt+Enter on supported terminals)",
-            ),
-            ("", "File tree (focused, direct input)"),
-            ("j/k", "Move cursor"),
-            ("Enter/l/h", "Expand / collapse directory"),
-            ("p / e", "Preview / edit (external editor)"),
-            ("i", "File info"),
-            ("a / r / d", "Create / rename / delete"),
-            ("o", "Send file path to agent"),
-            ("y / Y", "Copy name / full path"),
-            ("v", "Multi-select (Space:toggle d:delete)"),
-            ("S-h", "Toggle hidden files"),
-            ("S-r", "Reload tree"),
-            ("", "Sessions sidebar (focused, direct input)"),
-            ("j/k", "Move cursor"),
-            (
-                "Enter / l",
-                "Open tab / new session / resume (closes sidebar)",
-            ),
-            ("n / r", "New session / reload history"),
-            ("p", "Pin / unpin session"),
-            ("/", "Search title and conversation (Enter:done Esc:clear)"),
-            ("", "Copy mode"),
-            ("h/j/k/l", "Move cursor"),
-            ("w / b / e", "Next word / prev word / word end"),
-            ("0 / ^ / $", "Line start / first char / line end"),
-            ("C-d / C-u", "Half page down / up"),
-            ("g / G", "Scroll to top / bottom"),
-            ("v / V", "Select chars / lines (again: clear)"),
-            ("y", "Copy selection and exit"),
-            ("Enter / q / Esc", "Exit copy mode"),
-        ];
+        let focus = self.panes.get(&self.focused).map(|p| p.pane_type());
+        let entries = help_entries(focus);
 
         let width = 56_u16.min(area.width);
         let height = (entries.len() as u16 + 2).min(area.height);

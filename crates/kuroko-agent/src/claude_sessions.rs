@@ -8,8 +8,9 @@ use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-/// 検索ヒットの抜粋で、マッチ前後に残す文字数
-const SNIPPET_WIDTH: usize = 20;
+/// 検索ヒットとして保持する文脈の、マッチ前後の文字数。
+/// 表示側が画面幅に合わせてさらに切り詰めるので、幅の広いサイドバーにも足りる長さにしておく
+const SNIPPET_WIDTH: usize = 60;
 
 /// 一覧表示用のセッション情報
 #[derive(Debug, Clone, PartialEq, Eq)]

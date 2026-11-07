@@ -376,6 +376,24 @@ impl SessionListPane {
     }
 }
 
+/// 検索ヒットの文脈を、一致箇所を残したまま表示幅（セル数）に収まるよう切り詰める。
+/// 全角文字は2セル分として数えるため、文字数ではなく幅で縮める。
+///
+/// @param context - 保持している一致箇所周辺のテキスト
+/// @param needle - 検索語
+/// @param avail - 使える表示幅（セル数）
+fn fit_snippet(context: &str, needle: &str, avail: usize) -> String {
+    let mut width = avail / 2;
+    loop {
+        let fitted =
+            claude_sessions::snippet(context, needle, width).unwrap_or_else(|| context.to_string());
+        if width == 0 || Line::raw(fitted.as_str()).width() <= avail {
+            return fitted;
+        }
+        width -= 1;
+    }
+}
+
 /// タブを開くアクションの後にサイドバーを閉じるアクションを続ける。
 /// サイドバーのペインがイベントを受けるのは表示中のみなので、トグルで閉じられる。
 fn open_and_close(action: Action) -> Vec<Action> {
@@ -506,10 +524,14 @@ impl Pane for SessionListPane {
                     .and_then(|_| self.content_hits.get(&self.history[*i].id)),
                 _ => None,
             };
-            if let Some(snippet) = snippet {
+            if let Some(context) = snippet
+                && let Some(needle) = &self.searched_query
+            {
+                // 幅の狭いサイドバーでも一致箇所が見えるよう、表示幅に収まる範囲で切り直す
+                let fitted = fit_snippet(context, needle, inner.width.saturating_sub(4).into());
                 items.push(ListItem::new(Text::from(vec![
                     line,
-                    Line::styled(format!("    {snippet}"), Style::default().fg(t.text_dim)),
+                    Line::styled(format!("    {fitted}"), Style::default().fg(t.text_dim)),
                 ])));
                 continue;
             }
@@ -864,6 +886,28 @@ mod tests {
         assert_eq!(pane.entries().last(), Some(&Entry::History(0)));
         assert_eq!(pane.content_hits["a"], "the Quokka is here");
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn fit_snippet_keeps_match_visible_in_narrow_width() {
+        let context =
+            "…lots of leading words here and the quokka bug was fixed in the parser later…";
+        let fitted = fit_snippet(context, "quokka", 16);
+        assert!(fitted.contains("quokka"), "{fitted}");
+        assert!(Line::raw(fitted.as_str()).width() <= 16, "{fitted}");
+    }
+
+    #[test]
+    fn fit_snippet_counts_wide_chars_as_two_cells() {
+        let context = "あいうえおかきくけこ認証トークンの期限切れを直したさしすせそ";
+        let fitted = fit_snippet(context, "認証", 14);
+        assert!(fitted.contains("認証"), "{fitted}");
+        assert!(Line::raw(fitted.as_str()).width() <= 14, "{fitted}");
+    }
+
+    #[test]
+    fn fit_snippet_returns_whole_context_when_it_fits() {
+        assert_eq!(fit_snippet("short quokka", "quokka", 40), "short quokka");
     }
 
     #[test]

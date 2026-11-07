@@ -882,6 +882,27 @@ fn help_shows_global_and_focused_area_only() {
 }
 
 #[test]
+fn help_key_column_fits_longest_key_in_every_context() {
+    use super::render::{help_entries, help_key_width};
+    for focus in [
+        None,
+        Some(PaneType::Agent),
+        Some(PaneType::FileTree),
+        Some(PaneType::Sessions),
+    ] {
+        let entries = help_entries(focus);
+        let width = help_key_width(&entries);
+        for (key, _) in &entries {
+            assert!(key.chars().count() <= width);
+        }
+    }
+    // Copy mode の "Enter / q / Esc"（15文字）が列幅を超えないこと
+    assert!(help_key_width(&help_entries(Some(PaneType::Agent))) >= 15);
+    // Global mode の "t / f / g / s"（13文字）が列幅に収まること
+    assert!(help_key_width(&help_entries(None)) >= 13);
+}
+
+#[test]
 fn help_hint_shows_toggle_key_in_direct_and_question_mark_in_global() {
     let mut app = App::new();
     assert_eq!(app.help_hint(), " C-g ? help ");

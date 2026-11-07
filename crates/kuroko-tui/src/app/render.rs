@@ -85,6 +85,15 @@ const HELP_COPY: &[(&str, &str)] = &[
     ("Enter / q / Esc", "Exit copy mode"),
 ];
 
+/// ヘルプのキー列に必要な幅（最長のキーの文字数）を返す
+pub(super) fn help_key_width(entries: &[(&str, &str)]) -> usize {
+    entries
+        .iter()
+        .map(|(key, _)| key.chars().count())
+        .max()
+        .unwrap_or(0)
+}
+
 /// ヘルプに出す行を返す。フォーカス中のペインに関する節、グローバルモードの節の順に並べる。
 /// 空キーの行はセクション見出し。
 ///
@@ -541,7 +550,14 @@ impl App {
         let focus = self.panes.get(&self.focused).map(|p| p.pane_type());
         let entries = help_entries(focus);
 
-        let width = 56_u16.min(area.width);
+        // キー列は最長のキーに合わせ、窓幅は説明文が収まるように決める（枠2 + 字下げ2 + 列間2）
+        let key_width = help_key_width(&entries);
+        let desc_width = entries
+            .iter()
+            .map(|(_, desc)| desc.chars().count())
+            .max()
+            .unwrap_or(0);
+        let width = ((key_width + desc_width + 6).max(56) as u16).min(area.width);
         let height = (entries.len() as u16 + 2).min(area.height);
         let x = (area.width.saturating_sub(width)) / 2;
         let y = (area.height.saturating_sub(height)) / 2;
@@ -577,7 +593,7 @@ impl App {
             } else {
                 Line::from(vec![
                     Span::styled(
-                        format!("  {:<13}", key),
+                        format!("  {key:<key_width$}  "),
                         Style::default().fg(t.text_primary),
                     ),
                     Span::styled(desc.to_string(), Style::default().fg(t.text_muted)),
